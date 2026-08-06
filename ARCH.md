@@ -104,7 +104,7 @@ against it — **not from documentation**:
 `TabDescriptor.Id` (`candidate`, `pipeline`) is what the React side registers against — not the
 route. Renaming a tab id silently unmounts its component.
 
-### What is still NOT settled, and why it blocks #14 and #15
+### The install path — asked, then answered
 
 **How `@plenipo/ui` resolves on a bare clone.** The .NET packages are vendored into `.packages/`
 precisely because they are not on nuget.org. `@plenipo/ui` is equally not on public npm — and
@@ -116,11 +116,15 @@ accounts.* If installing `@plenipo/ui` requires an authenticated registry, then 
 **breaks `dotnet test` and CI on a bare clone**, which is the one thing this product's whole
 verification story rests on.
 
-So #14 and #15 stay in `Backlog`. Their seam is now pinned; their *buildability* is not, and
-promoting them would hand the build loop an issue that stalls at `npm install`. Resolving it is one
-of: the package is public and this is a non-issue · vendor the tarball as `.packages/` does for
-nupkgs · an `.npmrc` with a token, which would violate keyless CI and needs a human. **Open question
-OQ9.**
+**Answered, empirically:** `@plenipo/ui` is published to the **public** npm registry. A probe
+install into an empty directory, with `_authToken=` deliberately blank, added 129 packages and
+exited 0 with `0.1.0-alpha.28` on disk. The absence of an `.npmrc` in `networthy` was not a missing
+piece — it is the evidence that none is needed.
+
+**Keyless CI holds, and #14/#15 are unblocked.** Note the asymmetry worth remembering: the .NET
+packages are **not** on nuget.org and must be vendored into `.packages/`; the npm package **is**
+public and must not be. Assuming the two halves distribute the same way is the mistake this
+paragraph exists to prevent.
 
 ## 6. Data model
 
@@ -235,7 +239,7 @@ does not block its other two capabilities.
 
 | # | Question | Why it is still open |
 |---|---|---|
-| **OQ9** | **How does `@plenipo/ui` resolve on a bare clone?** Not on public npm; `networthy` has no `.npmrc` and no vendored tarball. Options: the package is public (non-issue) · vendor the tarball as `.packages/` does for nupkgs · an `.npmrc` token, which **violates keyless CI** and is a human's call. **Blocks #14 and #15** — their seam is pinned, their buildability is not. |
+| ~~**OQ9**~~ | **RESOLVED 2026-08-06 — the package IS public.** `@plenipo/ui` is on registry.npmjs.org (6 versions, `0.1.0-alpha.28` is `latest`), and `npm install @plenipo/ui@0.1.0-alpha.28` succeeds **with an empty auth token, exit 0**. So there is no `.npmrc`, no token, and keyless CI is preserved — which is exactly why `networthy` has no `.npmrc`: it never needed one. The npm half is **not** vendored like `.packages/`, and does not need to be. #14 and #15 are unblocked. |
 | **OQ7** | Where do demographics for four-fifths monitoring come from, and what happens when absent (common and lawful)? | **Legally sensitive and not an engineering call.** Options: optional self-reported EEO fields with a reported coverage %, or omit and report only what exists. **A human decides.** Blocks `get_impact_report`, not the rest of epic 7 |
 | — | Does a rejected candidate get to see their evidence? | A differentiator with real support cost, and a GDPR Art. 22 question in the EU. Not v1; recorded so it is not rediscovered |
 

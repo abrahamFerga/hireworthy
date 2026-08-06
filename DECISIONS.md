@@ -268,7 +268,11 @@ rot; that cost is accepted for exactly two interactions and no others, and any t
 should be argued separately. The version coupling is deliberate: a mismatched `@plenipo/ui` against
 a `Plenipo.*` pin is the kind of drift that presents as a blank tab with no error.
 
-**It does not unblock #14 and #15.** How `@plenipo/ui` installs on a bare clone is unresolved
-(**OQ9**), and if it needs an authenticated registry it breaks the keyless-CI invariant this
-product's verification rests on. Pinning the seam without proving the install would have handed the
-build loop an issue that dies at `npm install` — which is why those two stay in `Backlog`.
+**The install path was the open risk, and it is now closed.** `@plenipo/ui` is on the **public**
+npm registry: a probe install with a deliberately blank `_authToken` exited 0 with
+`0.1.0-alpha.28` on disk. Keyless CI holds and #14/#15 are unblocked.
+
+Worth carrying forward, because it is counter-intuitive: **the two halves of the platform distribute
+differently.** The .NET packages are not on nuget.org and must be vendored into `.packages/`; the
+npm package is public and must not be. Treating them the same — either by vendoring the tarball or
+by assuming the nupkgs are public — is the error this records against.
