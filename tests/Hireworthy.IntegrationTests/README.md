@@ -7,3 +7,5 @@ golden evals. Keeping one source for that contract is why the scaffold does not 
 Until the runbook is installed, this project builds and runs **zero tests**. A green
 `dotnet test` here therefore proves nothing about runtime behaviour, and must not be reported as if
 it did.
+
+<!-- merge-gate proof branch; deleted after the check -->
