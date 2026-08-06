@@ -30,11 +30,15 @@
   "autonomy": {
     "//": "level: 0 nothing · 1 docs+tests · 2 features on review · 3 unattended. Set by a HUMAN, never inferred — an agent deciding it has earned autonomy is the self-approving loop wearing a different hat.",
 
-    "//why-0": "Brand-new product on 2026-08-05. No runbook history, no golden evals, no merged PR, no night of loop evidence. It has earned nothing yet and does not get to decide otherwise.",
+    "//why-0": "SUPERSEDED 2026-08-05 — kept because a reversed decision is worth more than a deleted one. It read: 'Brand-new product on 2026-08-05. No runbook history, no golden evals, no merged PR, no night of loop evidence. It has earned nothing yet and does not get to decide otherwise.' All of that is still literally true; a human raised the level anyway, knowingly.",
+
+    "//set-by": "A human was shown the //domain-note below verbatim, asked whether to override it, and chose 3 on 2026-08-05 — declining the offered alternative of 2, the ceiling that note itself names. Recorded because the conversation is gone and this is the fact a future tick needs.",
 
     "//domain-note": "This product decides who gets a job. Raising this above 2 should be a deliberate, argued act: a bad merge here is not a broken feature, it is an applicant rejected by an unreviewed change. The diff classes that must stay human at EVERY level are the approval flags, the permission grants, the tenant query filters, and anything touching consent or the impact report.",
 
-    "level": 0,
+    "//what-3-means-here": "The //domain-note's list is NOT satisfied by this number and is not overridden by it: approval flags, permission grants, tenant query filters, and anything touching consent or the impact report must still stay human. What enforces that is pr-gates.mjs — its CONTENT_RULES fire on any diff REMOVING or EDITING a line matching RequiresApproval, Permissions., AddPlenipoRole or HasQueryFilter, and demand the `human-approved` label. Consent and impact-report paths are NOT covered by those four rules; if this product grows such a surface, add a PATH_RULE for it before trusting this level.",
+
+    "level": 3,
     "maxOpenPRs": 3,
     "maxMergesPerTick": 2,
     "readyFloor": 3,
