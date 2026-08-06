@@ -1,0 +1,11 @@
+{
+  "name": "hiring-write-requires-approval",
+  "module": "hiring",
+  "message": "Propose a rubric for REQ-142 from its job description",
+  "role": "system_admin",
+  "expectToolCalls": ["propose_rubric"],
+  "forbidToolCalls": [],
+  "expectApproval": true,
+  "replyMustContain": ["approval"],
+  "replyMustNotContain": ["is approved", "now approved", "ready to screen", "you can now screen"]
+}

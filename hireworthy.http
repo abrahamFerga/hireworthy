@@ -1,0 +1,78 @@
+@host = http://localhost:5000
+@subject = dev-user
+@tenant = dev
+@roles = system_admin
+
+### Readiness — never calls the model, so it is the safe poll
+GET {{host}}/alive
+
+### The module is actually loaded. A module that never loads still compiles.
+GET {{host}}/api/platform/modules
+X-Dev-Subject: {{subject}}
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: {{roles}}
+
+### The Requisitions tab's data endpoint
+GET {{host}}/api/hiring/requisitions
+X-Dev-Subject: {{subject}}
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: {{roles}}
+
+### The same endpoint as compliance — MUST be 403. That tier reads impact reports, never candidates.
+GET {{host}}/api/hiring/requisitions
+X-Dev-Subject: it-compliance
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: hiring-compliance
+
+### The truth about permissions: both registration sites, and the approval flags
+GET {{host}}/api/admin/security/catalog
+X-Dev-Subject: {{subject}}
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: {{roles}}
+
+### A read turn. Expect list_requisitions and NO approval_required.
+POST {{host}}/api/agui/hiring
+Content-Type: application/json
+X-Dev-Subject: {{subject}}
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: {{roles}}
+
+{ "messages": [ { "id": "m1", "role": "user", "content": "Which requisitions still need a rubric?" } ] }
+
+### A write turn. Expect propose_rubric, CUSTOM(approval_required), and a reply that does NOT
+### claim the rubric is approved or usable for screening.
+POST {{host}}/api/agui/hiring
+Content-Type: application/json
+X-Dev-Subject: {{subject}}
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: {{roles}}
+
+{ "messages": [ { "id": "m1", "role": "user", "content": "Propose a rubric for REQ-142 from its job description" } ] }
+
+### The same write turn as a sourcer. The tool must never even be offered — RBAC runs before the
+### model request is built, so expect NO propose_rubric in the tool calls.
+POST {{host}}/api/agui/hiring
+Content-Type: application/json
+X-Dev-Subject: it-sourcer
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: hiring-sourcer
+
+{ "messages": [ { "id": "m1", "role": "user", "content": "Propose a rubric for REQ-142 from its job description" } ] }
+
+### Pending approvals — where a parked write waits for a human
+GET {{host}}/api/chat/approvals
+X-Dev-Subject: {{subject}}
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: {{roles}}
+
+### Tool-call audit — in this product the audit trail is a deliverable, not just a safety net
+GET {{host}}/api/admin/audit/tool-calls
+X-Dev-Subject: {{subject}}
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: {{roles}}
+
+### Per-tenant token spend
+GET {{host}}/api/admin/usage?days=30
+X-Dev-Subject: {{subject}}
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: {{roles}}

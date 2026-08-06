@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hireworthy",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/Hireworthy.AppHost"],
+      "port": 5000
+    }
+  ]
+}

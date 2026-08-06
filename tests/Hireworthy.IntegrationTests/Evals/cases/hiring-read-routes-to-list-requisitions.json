@@ -1,0 +1,11 @@
+{
+  "name": "hiring-read-routes-to-list-requisitions",
+  "module": "hiring",
+  "message": "List the requisitions",
+  "role": "system_admin",
+  "expectToolCalls": ["list_requisitions"],
+  "forbidToolCalls": ["propose_rubric"],
+  "expectApproval": false,
+  "replyMustContain": [],
+  "replyMustNotContain": []
+}

@@ -1,0 +1,102 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Xunit;
+
+namespace Hireworthy.IntegrationTests;
+
+/// <summary>
+/// Rung 3: the host actually boots and the module is actually loaded.
+/// </summary>
+/// <remarks>
+/// Every assertion here failed at some point during scaffolding while <c>dotnet build</c> stayed
+/// green — a module that never loads compiles perfectly, and a host that throws at startup compiles
+/// perfectly too. These are the cheapest checks that would have caught it.
+/// </remarks>
+[Collection("api")]
+public sealed class SmokeTests(IntegrationFixture fixture)
+{
+    [Fact]
+    public async Task Alive_returns_200_without_calling_the_model()
+    {
+        using var client = fixture.AdminClient();
+        var response = await client.GetAsync("/alive");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_hiring_module_is_loaded_and_declares_both_tabs()
+    {
+        using var client = fixture.AdminClient();
+        var modules = await client.GetFromJsonAsync<JsonElement>("/api/platform/modules");
+
+        var hiring = modules.EnumerateArray()
+            .SingleOrDefault(m => m.GetProperty("id").GetString() == "hiring");
+
+        Assert.True(hiring.ValueKind is not JsonValueKind.Undefined,
+            "The hiring module did not load. A module that never loads still compiles — this is the check that catches it.");
+
+        var routes = hiring.GetProperty("tabs").EnumerateArray()
+            .Select(t => t.GetProperty("route").GetString())
+            .ToList();
+
+        Assert.Contains("/hiring/chat", routes);
+        Assert.Contains("/hiring/requisitions", routes);
+    }
+
+    [Fact]
+    public async Task The_seeded_requisitions_are_readable_through_the_tab_endpoint()
+    {
+        using var client = fixture.AdminClient();
+        var rows = await client.GetFromJsonAsync<JsonElement>("/api/hiring/requisitions");
+
+        var references = rows.EnumerateArray()
+            .Select(r => r.GetProperty("reference").GetString())
+            .ToList();
+
+        Assert.Contains("REQ-142", references);
+        // Seeded with no rubric, which is the correct empty state: nobody may be scored until a
+        // human has approved the criteria.
+        Assert.All(rows.EnumerateArray(), r => Assert.Equal("None", r.GetProperty("rubric").GetString()));
+    }
+
+    [Fact]
+    public async Task The_requisitions_endpoint_is_permission_gated()
+    {
+        // A tab endpoint returns rows; without the permission it would be readable by anyone who
+        // can reach the shell. `hiring-compliance` deliberately holds no candidate-record read.
+        using var client = fixture.AdminClient(roles: "hiring-compliance", subject: "it-compliance");
+        var response = await client.GetAsync("/api/hiring/requisitions");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_security_catalog_agrees_with_the_manifest_on_every_tool()
+    {
+        // GET /api/admin/security/catalog is the platform's own view of both registration sites.
+        // A tool declared in the manifest but not the tool source is silently never callable, and
+        // a permission string that disagrees 403s even for system_admin.
+        using var client = fixture.AdminClient();
+        var catalog = await client.GetFromJsonAsync<JsonElement>("/api/admin/security/catalog");
+
+        var hiring = catalog.GetProperty("modules").EnumerateArray()
+            .Single(m => m.GetProperty("id").GetString() == "hiring");
+
+        var tools = hiring.GetProperty("tools").EnumerateArray()
+            .ToDictionary(t => t.GetProperty("permission").GetString()!, t => t);
+
+        Assert.Equal(3, tools.Count);
+        Assert.True(tools.ContainsKey("tools.hiring.list_requisitions"));
+        Assert.True(tools.ContainsKey("tools.hiring.get_requisition"));
+
+        // The gate, asserted where the platform reports it rather than where we declared it.
+        Assert.True(tools["tools.hiring.propose_rubric"].GetProperty("requiresApproval").GetBoolean(),
+            "propose_rubric is not approval-gated. Nobody may be scored against criteria a human has not accepted.");
+        Assert.False(tools["tools.hiring.list_requisitions"].GetProperty("requiresApproval").GetBoolean());
+
+        // Everything the module does is audited: in this product the audit trail is a deliverable
+        // a bias auditor asks for, not merely a safety net.
+        Assert.All(tools.Values, t => Assert.True(t.GetProperty("audited").GetBoolean()));
+    }
+}

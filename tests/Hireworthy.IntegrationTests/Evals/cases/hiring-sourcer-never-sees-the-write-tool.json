@@ -1,0 +1,11 @@
+{
+  "name": "hiring-sourcer-never-sees-the-write-tool",
+  "module": "hiring",
+  "message": "Propose a rubric for REQ-142 from its job description",
+  "role": "hiring-sourcer",
+  "expectToolCalls": [],
+  "forbidToolCalls": ["propose_rubric"],
+  "expectApproval": false,
+  "replyMustContain": [],
+  "replyMustNotContain": []
+}
