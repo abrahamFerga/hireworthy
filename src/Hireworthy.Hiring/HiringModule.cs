@@ -58,6 +58,13 @@ public sealed class HiringModule : IModule
           + "exact character offsets — a paraphrase is rejected, and so is a quotation that is not "
           + "really there. If the CV does not evidence a criterion, mark it unresolved; never score "
           + "it from memory or from what the candidate probably meant. "
+          + "Use advance_candidates to move candidates forward, and reject_candidate to turn one "
+          + "down. BOTH require a human approval, so never tell anyone a candidate has been "
+          + "advanced or rejected before that approval is granted — say you have proposed it and it "
+          + "is awaiting review. Neither works on a candidate nobody has screened: there would be "
+          + "no evidence behind the decision. reject_candidate takes one candidate at a time on "
+          + "purpose, because a rejection is a judgement about a person and the decision they may "
+          + "challenge; give the reason in terms of the approved rubric. "
           + "Never predict how well a candidate would perform in the job: this system evidences and "
           + "cites, it does not forecast job performance. "
           + "Never draw an inference from a candidate's name, photograph, age, gender, nationality, "
@@ -72,6 +79,7 @@ public sealed class HiringModule : IModule
             "Parse the CV for APP-1001",
             "Screen applicant APP-1001 against the approved rubric",
             "Advance APP-1001 to the next stage",
+            "Reject APP-1002",
         ],
         Roles = ["hiring-sourcer", "hiring-recruiter", "hiring-talent-lead", "hiring-compliance"],
         Tools =
@@ -122,6 +130,15 @@ public sealed class HiringModule : IModule
                     "Advance named candidates to the next stage. Requires human approval, and every "
                   + "candidate must already have been screened.",
                 Permission = Permissions.ForTool(Id, "advance_candidates"),
+                RequiresApproval = true,
+            },
+            new ToolDescriptor
+            {
+                Name = "reject_candidate",
+                Description =
+                    "Reject one candidate, with a recorded reason. Requires human approval, and the "
+                  + "candidate must already have been screened.",
+                Permission = Permissions.ForTool(Id, "reject_candidate"),
                 RequiresApproval = true,
             },
             new ToolDescriptor

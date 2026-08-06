@@ -55,6 +55,9 @@ builder.Services.AddPlenipoRole("hiring-recruiter",
     "tools.hiring.parse_cv",
     "tools.hiring.screen_applicant",
     "tools.hiring.propose_rubric",
+    // SPEC.md §3: a recruiter MAY reject and schedule; advancing is the hiring manager's call.
+    // That asymmetry is the whole point of the tier, so reject is granted here and advance is not.
+    "tools.hiring.reject_candidate",
     Permissions.ManageApprovals,
 ]);
 

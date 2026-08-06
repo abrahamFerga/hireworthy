@@ -605,6 +605,100 @@ public sealed class HiringTools(HiringDbContext db, ITenantContext tenantContext
              + $"Reason: {reason}. Each decision records the screening it rests on.";
     }
 
+    /// <summary>
+    /// Rejects one candidate. <b>Approval-gated</b>, and the decision this product is ultimately
+    /// judged on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Singular where <c>advance_candidates</c> is plural, and that asymmetry is deliberate.</b>
+    /// Advancing a shortlist is one judgement about a group. A rejection is a judgement about a
+    /// person, it is the decision they may challenge, and it is the one a bias auditor samples. One
+    /// approval per rejection means a human looked at that individual — batching would make the gate
+    /// a formality at exactly the point it matters most.
+    /// </para>
+    /// <para>
+    /// It THROWS on every failure, for the same reason <c>advance_candidates</c> does: it runs only
+    /// after a human approved, so there is no retry loop, and a returned string would resolve the
+    /// approval as <c>Executed</c> with <c>error: null</c>. And it refuses to reject a candidate
+    /// nobody screened — a rejection with no evidence behind it is the single worst artifact this
+    /// system could produce.
+    /// </para>
+    /// </remarks>
+    [Description("Reject one candidate, with a recorded reason. Requires human approval, and the candidate must already have been screened.")]
+    public async Task<string> RejectCandidateAsync(
+        [Description("The applicant's reference, e.g. 'APP-1001'.")] string reference,
+        [Description("Why this candidate is being rejected, in terms of the rubric. Recorded permanently and readable by an auditor.")] string reason,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(reference))
+        {
+            throw new ArgumentException("Name the candidate to reject.", nameof(reference));
+        }
+
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new ArgumentException(
+                "A reason is required. This is the sentence a rejected candidate, a bias auditor or "
+              + "a tribunal reads, and it is the only account of why this person was turned down.",
+                nameof(reason));
+        }
+
+        var applicant = await db.Applicants
+            .FirstOrDefaultAsync(a => a.Reference == reference.Trim(), cancellationToken);
+
+        if (applicant is null)
+        {
+            throw new InvalidOperationException(
+                $"No applicant found with reference \"{reference}\". Nobody was rejected.");
+        }
+
+        if (applicant.Stage == ApplicantStage.Rejected)
+        {
+            throw new InvalidOperationException(
+                $"{applicant.Reference} has already been rejected. Nobody was rejected again.");
+        }
+
+        if (applicant.Stage == ApplicantStage.Hired)
+        {
+            throw new InvalidOperationException(
+                $"{applicant.Reference} has been hired and cannot be rejected. Nobody was rejected.");
+        }
+
+        var evidence = await db.ScreeningResults
+            .FirstOrDefaultAsync(
+                r => r.ApplicantId == applicant.Id && r.Status == ScreeningStatus.Proposed,
+                cancellationToken);
+
+        if (evidence is null)
+        {
+            throw new InvalidOperationException(
+                $"Cannot reject {applicant.Reference} — nobody has screened them, so there is no "
+              + "evidence behind the decision. Screen them first with screen_applicant. "
+              + "Nobody was rejected.");
+        }
+
+        var from = applicant.Stage;
+        applicant.Stage = ApplicantStage.Rejected;
+
+        db.Decisions.Add(new Decision
+        {
+            TenantId = tenantContext.RequireTenantId(),
+            ApplicantId = applicant.Id,
+            Kind = DecisionKind.Reject,
+            FromStage = from,
+            ToStage = ApplicantStage.Rejected,
+            Reason = reason,
+            ScreeningResultId = evidence.Id,
+            DecidedAt = DateTimeOffset.UtcNow,
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return $"Rejected {applicant.Reference} ({applicant.FullName}), previously at {from}. "
+             + $"Reason: {reason}. The decision records the screening it rests on.";
+    }
+
     /// <summary>The next stage, or null when there is nowhere further to go.</summary>
     private static ApplicantStage? NextStage(ApplicantStage stage) => stage switch
     {
