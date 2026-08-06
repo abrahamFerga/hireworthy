@@ -15,4 +15,5 @@ fresh session. One line per tick, appended, never rewritten.
 2026-08-06T12:57Z · deliver · rule 4 · #11 · Success · PR #24 opened, card In Review · L1 build+27+28, L3 AG-UI+audit+catalog; grounding seen red before green
 2026-08-06T13:06Z · deliver · rule 4 -> 5 · — · No-op · review is the constraint, not build capacity: #12 and #13 both need Decision.evidenceRef -> ScreeningResult, which is in open PR #24 · next: review/merge #24
 2026-08-06T16:32Z · deliver · rule 4 · #12 · Success · PR #29 opened, card In Review · L1 build+27+39(x2), L3 approval_required fired + call parked + sourcer/recruiter denied; gate guard seen red
+2026-08-06T22:57Z · deliver · rule 4 · #13 · Success · PR #36 opened, card In Review · L1 build+28+50(x2), L3 approval_required fired; instruction guard seen RED against real code (#12 defect); filed #35 role-baseline drift
 ```
