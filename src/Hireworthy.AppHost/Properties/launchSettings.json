@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "http": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "environmentVariables": {
+        "//": "Without these the AppHost itself runs as Production, and Aspire launches the API with --no-launch-profile — so the API is Production too and AddPlenipoPlatform() throws 'Plenipo authentication is not configured' before it serves a single request. Dashboard and OTLP ports are deliberately NOT pinned here: they are per-run and pinning them would collide with the other products on this machine, unlike the Postgres host port, which is pinned on purpose.",
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

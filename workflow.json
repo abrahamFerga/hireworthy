@@ -1,0 +1,59 @@
+{
+  "//": "Policy for this repo, read by the loop verbs and by .github/scripts/merge-gate.mjs. Strict JSON — that script JSON.parse()s it, so comments must be \"//\" keys, never // lines.",
+
+  "name": "hireworthy",
+  "industry": "talent-acquisition",
+  "loop": "deliver",
+  "stage": "product",
+
+  "platform": {
+    "version": "0.1.0-alpha.28",
+    "feed": "vendored"
+  },
+
+  "cloud": "azure",
+  "connectors": [],
+
+  "capabilities": [
+    { "name": "vector-db", "provider": "pgvector" },
+    { "name": "file-storage", "provider": "azure-blob" },
+    { "name": "ocr", "provider": "azure-document-intelligence" }
+  ],
+
+  "github": {
+    "owner": "abrahamFerga",
+    "repo": "abrahamFerga/hireworthy",
+    "project": null,
+    "visibility": "public"
+  },
+
+  "autonomy": {
+    "//": "level: 0 nothing · 1 docs+tests · 2 features on review · 3 unattended. Set by a HUMAN, never inferred — an agent deciding it has earned autonomy is the self-approving loop wearing a different hat.",
+
+    "//why-0": "Brand-new product on 2026-08-05. No runbook history, no golden evals, no merged PR, no night of loop evidence. It has earned nothing yet and does not get to decide otherwise.",
+
+    "//domain-note": "This product decides who gets a job. Raising this above 2 should be a deliberate, argued act: a bad merge here is not a broken feature, it is an applicant rejected by an unreviewed change. The diff classes that must stay human at EVERY level are the approval flags, the permission grants, the tenant query filters, and anything touching consent or the impact report.",
+
+    "level": 0,
+    "maxOpenPRs": 3,
+    "maxMergesPerTick": 2,
+    "readyFloor": 3,
+    "maxIssuesPerSweep": 8,
+    "maxNewCapabilities": 5
+  },
+
+  "skills": {
+    "self": {
+      "marketplace": "plenipo-agents",
+      "repo": "abrahamFerga/plenipo-agents",
+      "plugins": [
+        "plenipo",
+        "harness",
+        "scout",
+        "define",
+        "shape",
+        "deliver"
+      ]
+    }
+  }
+}

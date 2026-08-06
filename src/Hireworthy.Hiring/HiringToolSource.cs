@@ -1,0 +1,54 @@
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
+using Plenipo.Application.Authorization;
+using Plenipo.Modules.Sdk;
+
+namespace Hireworthy.Hiring;
+
+/// <summary>
+/// Supplies the hiring module's executable tools.
+/// </summary>
+/// <remarks>
+/// A tool must be registered in <b>two</b> places — a <c>ToolDescriptor</c> in
+/// <see cref="HiringModule"/>'s manifest and a <see cref="ModuleTool"/> here — carrying the
+/// <b>same</b> permission string, always built with <c>Permissions.ForTool</c> rather than
+/// hand-written. Miss either and the tool is silently never callable; mismatch the strings and it
+/// 403s even for <c>system_admin</c>. Verify with <c>GET /api/admin/security/catalog</c>.
+/// </remarks>
+public sealed class HiringToolSource : IModuleToolSource
+{
+    public string ModuleId => HiringModule.Id;
+
+    public IReadOnlyList<ModuleTool> GetTools(IServiceProvider scopedServices)
+    {
+        var tools = scopedServices.GetRequiredService<HiringTools>();
+
+        return
+        [
+            new ModuleTool
+            {
+                ModuleId = ModuleId,
+                Name = "list_requisitions",
+                Permission = Permissions.ForTool(ModuleId, "list_requisitions"),
+                Function = AIFunctionFactory.Create(tools.ListRequisitionsAsync, name: "list_requisitions"),
+            },
+            new ModuleTool
+            {
+                ModuleId = ModuleId,
+                Name = "get_requisition",
+                Permission = Permissions.ForTool(ModuleId, "get_requisition"),
+                Function = AIFunctionFactory.Create(tools.GetRequisitionAsync, name: "get_requisition"),
+            },
+            new ModuleTool
+            {
+                ModuleId = ModuleId,
+                Name = "propose_rubric",
+                Permission = Permissions.ForTool(ModuleId, "propose_rubric"),
+                Function = AIFunctionFactory.Create(tools.ProposeRubricAsync, name: "propose_rubric"),
+                // Kept in sync with the manifest descriptor deliberately: the runner unions both
+                // sets, so setting one and reviewing only that one hides a broken gate.
+                RequiresApproval = true,
+            },
+        ];
+    }
+}

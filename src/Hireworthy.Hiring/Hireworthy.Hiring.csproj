@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Hireworthy's domain module — evidence-first hiring, implemented as a Plenipo module
+       (IModule + manifest). The Plenipo platform (packages below) supplies auth, multi-tenancy,
+       RBAC-before-the-model, approvals, append-only audit, chat/agents, document tools, OCR, RAG
+       and jobs; this project owns ONLY the hiring domain: requisitions, rubrics, applicants,
+       screening with citations, interviews and decisions. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Hireworthy.Hiring.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.8.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10" PrivateAssets="all" />
+    <PackageReference Include="Plenipo.Core" Version="$(PlenipoVersion)" />
+    <PackageReference Include="Plenipo.Application" Version="$(PlenipoVersion)" />
+    <PackageReference Include="Plenipo.Modules.Sdk" Version="$(PlenipoVersion)" />
+  </ItemGroup>
+
+</Project>

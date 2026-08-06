@@ -1,0 +1,43 @@
+{
+  "//": "Loop settings for the hireworthy product repo. Every plugin an unattended run may need is enabled up front, because a run cannot reload its own plugin set mid-flight; the cost is each skill's description and nothing else until one is invoked.",
+
+  "extraKnownMarketplaces": {
+    "plenipo-agents": {
+      "source": { "source": "github", "repo": "abrahamFerga/plenipo-agents" }
+    }
+  },
+
+  "enabledPlugins": {
+    "plenipo@plenipo-agents": true,
+    "harness@plenipo-agents": true,
+    "scout@plenipo-agents": true,
+    "define@plenipo-agents": true,
+    "shape@plenipo-agents": true,
+    "deliver@plenipo-agents": true,
+    "steward@plenipo-agents": false
+  },
+
+  "permissions": {
+    "//": "Allow what a tick in THIS repo genuinely needs, so a timer never blocks on a prompt nobody is there to answer.",
+    "allow": [
+      "Bash(gh:*)",
+      "Bash(git:*)",
+      "Bash(dotnet:*)",
+      "Bash(docker:*)",
+      "Bash(aspire:*)",
+      "Bash(node:*)",
+      "Bash(npx:*)",
+      "Bash(curl:*)"
+    ],
+    "//deny": "Deny beats allow, and these are the difference between a loop that can only propose and one that can destroy. Note what deny can and cannot see: it matches the Bash string, so it stops an improvised `gh pr merge` but NOT a merge inside a script. The authoritative control is autonomy.level in workflow.json. Treat this list as the belt, not the braces, and remove nothing from it.",
+    "deny": [
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr review:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(gh repo delete:*)",
+      "Bash(gh api --method DELETE:*)",
+      "Bash(docker volume rm:*)"
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Hireworthy.AppHost/Hireworthy.AppHost.csproj" />
+    <Project Path="src/Hireworthy.Host/Hireworthy.Host.csproj" />
+    <Project Path="src/Hireworthy.Hiring/Hireworthy.Hiring.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Hireworthy.Hiring.Tests/Hireworthy.Hiring.Tests.csproj" />
+    <Project Path="tests/Hireworthy.IntegrationTests/Hireworthy.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

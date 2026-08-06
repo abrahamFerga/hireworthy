@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # No secrets are configured anywhere in this workflow, and that is the point: the platform's
+      # Mock chat provider, Mock embedder and dev-auth are what let a bare clone build and test.
+      # A CI job here that needs an API key is a defect in the change, not in the workflow.
+      - name: Restore
+        run: dotnet restore Hireworthy.slnx
+
+      - name: Build
+        run: dotnet build Hireworthy.slnx --no-restore --configuration Release
+
+      # The module guard needs no Docker: manifest integrity, tool/permission parity, and the
+      # per-entity tenant query filters whose absence is a silent cross-tenant leak.
+      - name: Test — module guard
+        run: dotnet test tests/Hireworthy.Hiring.Tests --no-build --configuration Release
+
+      # Boots the real host against a real Postgres. Docker is available on ubuntu-latest.
+      - name: Test — integration
+        run: dotnet test tests/Hireworthy.IntegrationTests --no-build --configuration Release
