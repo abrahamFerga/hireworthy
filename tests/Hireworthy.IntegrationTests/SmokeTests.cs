@@ -86,14 +86,21 @@ public sealed class SmokeTests(IntegrationFixture fixture)
         var tools = hiring.GetProperty("tools").EnumerateArray()
             .ToDictionary(t => t.GetProperty("permission").GetString()!, t => t);
 
-        Assert.Equal(3, tools.Count);
+        Assert.Equal(5, tools.Count);
         Assert.True(tools.ContainsKey("tools.hiring.list_requisitions"));
         Assert.True(tools.ContainsKey("tools.hiring.get_requisition"));
+        Assert.True(tools.ContainsKey("tools.hiring.get_applicant"));
+        Assert.True(tools.ContainsKey("tools.hiring.parse_cv"));
 
         // The gate, asserted where the platform reports it rather than where we declared it.
         Assert.True(tools["tools.hiring.propose_rubric"].GetProperty("requiresApproval").GetBoolean(),
             "propose_rubric is not approval-gated. Nobody may be scored against criteria a human has not accepted.");
         Assert.False(tools["tools.hiring.list_requisitions"].GetProperty("requiresApproval").GetBoolean());
+
+        // parse_cv is ungated by argued exception (ADR-0004), not by oversight: it writes derived
+        // data recomputable from the CV and moves nobody's stage. If a future change makes it
+        // consequential, this assertion is the one that must be revisited first.
+        Assert.False(tools["tools.hiring.parse_cv"].GetProperty("requiresApproval").GetBoolean());
 
         // Everything the module does is audited: in this product the audit trail is a deliverable
         // a bias auditor asks for, not merely a safety net.
