@@ -58,6 +58,15 @@ public sealed class HiringToolSource : IModuleToolSource
             new ModuleTool
             {
                 ModuleId = ModuleId,
+                Name = "screen_applicant",
+                Permission = Permissions.ForTool(ModuleId, "screen_applicant"),
+                Function = AIFunctionFactory.Create(tools.ScreenApplicantAsync, name: "screen_applicant"),
+                // Ungated (ADR-0004): writes a proposal, moves nobody's stage. The citation
+                // containment check inside it is what makes the proposal trustworthy.
+            },
+            new ModuleTool
+            {
+                ModuleId = ModuleId,
                 Name = "propose_rubric",
                 Permission = Permissions.ForTool(ModuleId, "propose_rubric"),
                 Function = AIFunctionFactory.Create(tools.ProposeRubricAsync, name: "propose_rubric"),

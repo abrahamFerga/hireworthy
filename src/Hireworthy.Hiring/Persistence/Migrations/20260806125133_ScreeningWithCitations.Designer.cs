@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Hireworthy.Hiring.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Hireworthy.Hiring.Persistence.Migrations
 {
     [DbContext(typeof(HiringDbContext))]
-    partial class HiringDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260806125133_ScreeningWithCitations")]
+    partial class ScreeningWithCitations
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

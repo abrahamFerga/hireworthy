@@ -37,6 +37,9 @@ builder.Services.AddPlenipoRole("hiring-sourcer",
     // writes that move nobody's stage — the sourcer still approves nothing (ADR-0004).
     "tools.hiring.get_applicant",
     "tools.hiring.parse_cv",
+    // Screening is the sourcer's core job. It writes a PROPOSAL with cited evidence and moves
+    // nobody's stage — the sourcer still approves nothing.
+    "tools.hiring.screen_applicant",
 ]);
 
 // Recruiters run the req: they may propose the rubric that every applicant is measured against,
@@ -50,6 +53,7 @@ builder.Services.AddPlenipoRole("hiring-recruiter",
     "tools.hiring.get_requisition",
     "tools.hiring.get_applicant",
     "tools.hiring.parse_cv",
+    "tools.hiring.screen_applicant",
     "tools.hiring.propose_rubric",
     Permissions.ManageApprovals,
 ]);
