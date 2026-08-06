@@ -42,6 +42,22 @@ public sealed class HiringToolSource : IModuleToolSource
             new ModuleTool
             {
                 ModuleId = ModuleId,
+                Name = "get_applicant",
+                Permission = Permissions.ForTool(ModuleId, "get_applicant"),
+                Function = AIFunctionFactory.Create(tools.GetApplicantAsync, name: "get_applicant"),
+            },
+            new ModuleTool
+            {
+                ModuleId = ModuleId,
+                Name = "parse_cv",
+                Permission = Permissions.ForTool(ModuleId, "parse_cv"),
+                Function = AIFunctionFactory.Create(tools.ParseCvAsync, name: "parse_cv"),
+                // NOT approval-gated, and that is an argued exception rather than an oversight —
+                // see ADR-0004. It writes derived data that changes no candidate's outcome.
+            },
+            new ModuleTool
+            {
+                ModuleId = ModuleId,
                 Name = "propose_rubric",
                 Permission = Permissions.ForTool(ModuleId, "propose_rubric"),
                 Function = AIFunctionFactory.Create(tools.ProposeRubricAsync, name: "propose_rubric"),

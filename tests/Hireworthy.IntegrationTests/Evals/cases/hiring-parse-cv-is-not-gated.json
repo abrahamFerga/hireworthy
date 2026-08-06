@@ -1,0 +1,11 @@
+{
+  "name": "hiring-parse-cv-is-not-gated",
+  "module": "hiring",
+  "message": "Parse the CV for APP-1001",
+  "role": "system_admin",
+  "expectToolCalls": ["parse_cv"],
+  "forbidToolCalls": ["propose_rubric"],
+  "expectApproval": false,
+  "replyMustContain": [],
+  "replyMustNotContain": []
+}

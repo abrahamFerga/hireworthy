@@ -49,6 +49,10 @@ public sealed class HiringModule : IModule
           + "REQUIRES a human approval, so never state that a rubric is in place, approved, or "
           + "usable for screening before the approval has been granted — say you have proposed it "
           + "and it is awaiting review. "
+          + "Use get_applicant to read a candidate's CV, then parse_cv to record the employment "
+          + "history, skills and education you read from it. Give dates as yyyy-MM and leave the end "
+          + "date empty for a current role; the system works out the employment gaps itself, so do "
+          + "not assert gaps yourself. Flag anything you cannot resolve rather than guessing it. "
           + "Never predict how well a candidate would perform in the job: this system evidences and "
           + "cites, it does not forecast job performance. "
           + "Never draw an inference from a candidate's name, photograph, age, gender, nationality, "
@@ -59,6 +63,8 @@ public sealed class HiringModule : IModule
             "Which requisitions still need a rubric?",
             "Show me REQ-142",
             "Propose a rubric for REQ-142 from its job description",
+            "Show me applicant APP-1001",
+            "Parse the CV for APP-1001",
         ],
         Roles = ["hiring-sourcer", "hiring-recruiter", "hiring-talent-lead", "hiring-compliance"],
         Tools =
@@ -76,6 +82,22 @@ public sealed class HiringModule : IModule
                 Description =
                     "Get one requisition in detail by its reference, e.g. 'REQ-142', including its job description and approved rubric.",
                 Permission = Permissions.ForTool(Id, "get_requisition"),
+            },
+            new ToolDescriptor
+            {
+                Name = "get_applicant",
+                Description =
+                    "Get one applicant by reference, e.g. 'APP-1001', including their CV text and anything already extracted from it.",
+                Permission = Permissions.ForTool(Id, "get_applicant"),
+            },
+            new ToolDescriptor
+            {
+                Name = "parse_cv",
+                Description =
+                    "Record the employment history, skills and education read from an applicant's CV. "
+                  + "Dates are yyyy-MM; leave the end date empty for a current role.",
+                Permission = Permissions.ForTool(Id, "parse_cv"),
+                // Deliberately ungated — ADR-0004. Derived, recomputable, and it moves no stage.
             },
             new ToolDescriptor
             {
@@ -200,17 +222,110 @@ public sealed class HiringModule : IModule
         }
 
         var db = services.GetRequiredService<HiringDbContext>();
+        var tenantId = tenant.RequireTenantId();
 
-        // No IgnoreQueryFilters: the tenant is established, so the query filter scopes this count to
-        // exactly the tenant being seeded — which is the check we want.
-        if (await db.Requisitions.AnyAsync(cancellationToken))
+        // Each kind is guarded SEPARATELY, and that is not fussiness. A single
+        // `if (Requisitions.Any()) return;` short-circuits the whole method on a dev volume that
+        // already has requisitions from an earlier version — so a developer who has run the product
+        // before gets the new tables and none of the new data, and the new tool looks broken for
+        // them and fine for everyone else. Testcontainers starts fresh every run, so no test can
+        // catch that; only booting against an existing volume does.
+        //
+        // No IgnoreQueryFilters: the tenant is established, so these counts are scoped to exactly
+        // the tenant being seeded — which is the check we want.
+        if (!await db.Requisitions.AnyAsync(cancellationToken))
         {
-            return;
+            db.Requisitions.AddRange(StarterRequisitions(tenantId));
+            await db.SaveChangesAsync(cancellationToken);
         }
 
-        db.Requisitions.AddRange(StarterRequisitions(tenant.RequireTenantId()));
-        await db.SaveChangesAsync(cancellationToken);
+        if (!await db.Applicants.AnyAsync(cancellationToken))
+        {
+            var backend = await db.Requisitions
+                .FirstOrDefaultAsync(r => r.Reference == "REQ-142", cancellationToken);
+
+            if (backend is not null)
+            {
+                db.Applicants.AddRange(StarterApplicants(tenantId, backend.Id));
+                await db.SaveChangesAsync(cancellationToken);
+            }
+        }
     }
+
+    /// <summary>
+    /// Two applicants on REQ-142, each with a CV as text.
+    /// </summary>
+    /// <remarks>
+    /// The CVs state their dates <b>inconsistently on purpose</b> — "Jan 2019", "2019 – present",
+    /// "03/2020" — because resolving that inconsistency is the extraction task. A pre-normalised
+    /// seed would make <c>parse_cv</c> look like it works when it had nothing to reason over.
+    /// APP-1001 carries a real ten-month employment gap; APP-1002 does not, so the gap inference
+    /// has both a positive and a negative case on a fresh clone.
+    /// </remarks>
+    private static IEnumerable<Applicant> StarterApplicants(Guid tenantId, Guid requisitionId) =>
+    [
+        new()
+        {
+            TenantId = tenantId,
+            RequisitionId = requisitionId,
+            Reference = "APP-1001",
+            FullName = "Maya Osei",
+            Email = "maya.osei@example.com",
+            Stage = ApplicantStage.Applied,
+            Source = "Job board",
+            Cv = new CvDocument
+            {
+                TenantId = tenantId,
+                FileName = "maya-osei-cv.pdf",
+                OcrUsed = false,
+                ExtractedText =
+                    "MAYA OSEI — Backend Engineer\n"
+                  + "maya.osei@example.com\n\n"
+                  + "EXPERIENCE\n"
+                  + "Staff Engineer, Kestrel Payments — Jan 2021 to present\n"
+                  + "  Own the settlement service. Rewrote the reconciliation pipeline in Python; "
+                  + "cut end-of-day breaks from ~40 a night to under 5. On call one week in four.\n"
+                  + "  Mentored two juniors through their first on-call rotations.\n\n"
+                  + "Backend Engineer, Northwind Retail — 03/2017 – 02/2020\n"
+                  + "  Built and ran order-management services in Python and some Go. Took the "
+                  + "checkout service through two Black Fridays.\n\n"
+                  + "Junior Developer, Halloway Systems — September 2015 until February 2017\n"
+                  + "  Internal tooling, mostly Python.\n\n"
+                  + "EDUCATION\n"
+                  + "BSc Computer Science, University of Manchester, 2015\n\n"
+                  + "SKILLS\n"
+                  + "Python, PostgreSQL, Go, Kubernetes, design documents, incident response",
+            },
+        },
+        new()
+        {
+            TenantId = tenantId,
+            RequisitionId = requisitionId,
+            Reference = "APP-1002",
+            FullName = "Daniel Brandt",
+            Email = "d.brandt@example.com",
+            Stage = ApplicantStage.Applied,
+            Source = "Referral",
+            Cv = new CvDocument
+            {
+                TenantId = tenantId,
+                FileName = "daniel-brandt-cv.pdf",
+                OcrUsed = true,
+                ExtractedText =
+                    "Daniel Brandt\n"
+                  + "d.brandt@example.com\n\n"
+                  + "Work history\n"
+                  + "Senior Software Engineer at Vantage Logistics, 2022 - Current\n"
+                  + "  Python services for freight tracking. Wrote the team's testing guidelines.\n"
+                  + "Software Engineer, Vantage Logistics, June 2019 to December 2021\n"
+                  + "  Same team, promoted internally.\n"
+                  + "Analyst, Meridian Consulting, 2018 — 2019\n"
+                  + "  Data analysis in Python and SQL. Not an engineering role.\n\n"
+                  + "Education: MSc Data Science, TU Delft, 2018. BSc Mathematics, TU Delft, 2016.\n"
+                  + "Skills: Python, SQL, Django, AWS, pandas",
+            },
+        },
+    ];
 
     /// <summary>
     /// Three requisitions with real job-description text, in mixed states.

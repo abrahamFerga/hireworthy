@@ -33,6 +33,10 @@ builder.Services.AddPlenipoRole("hiring-sourcer",
     HiringModule.ViewHiring,
     "tools.hiring.list_requisitions",
     "tools.hiring.get_requisition",
+    // Screening work: read a candidate's CV and record what it says. Both are reads or derived
+    // writes that move nobody's stage — the sourcer still approves nothing (ADR-0004).
+    "tools.hiring.get_applicant",
+    "tools.hiring.parse_cv",
 ]);
 
 // Recruiters run the req: they may propose the rubric that every applicant is measured against,
@@ -44,6 +48,8 @@ builder.Services.AddPlenipoRole("hiring-recruiter",
     HiringModule.ViewHiring,
     "tools.hiring.list_requisitions",
     "tools.hiring.get_requisition",
+    "tools.hiring.get_applicant",
+    "tools.hiring.parse_cv",
     "tools.hiring.propose_rubric",
     Permissions.ManageApprovals,
 ]);

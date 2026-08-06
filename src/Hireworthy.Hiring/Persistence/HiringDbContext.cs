@@ -44,6 +44,14 @@ public sealed class HiringDbContext(
 
     public DbSet<RubricCriterion> RubricCriteria => Set<RubricCriterion>();
 
+    public DbSet<Applicant> Applicants => Set<Applicant>();
+
+    public DbSet<CvDocument> CvDocuments => Set<CvDocument>();
+
+    public DbSet<ExtractedProfile> ExtractedProfiles => Set<ExtractedProfile>();
+
+    public DbSet<EmploymentSpan> EmploymentSpans => Set<EmploymentSpan>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -99,6 +107,78 @@ public sealed class HiringDbContext(
             entity.HasOne(e => e.Rubric)
                 .WithMany(r => r.Criteria)
                 .HasForeignKey(e => e.RubricId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasQueryFilter(e => e.TenantId == tenantContext.TenantId);
+        });
+
+        modelBuilder.Entity<Applicant>(entity =>
+        {
+            entity.ToTable("applicants");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Reference).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.FullName).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.Email).HasMaxLength(320);
+            entity.Property(e => e.Phone).HasMaxLength(64);
+            entity.Property(e => e.Source).HasMaxLength(128);
+            entity.Property(e => e.Stage).HasConversion<string>().HasMaxLength(32);
+            entity.HasIndex(e => new { e.TenantId, e.Reference }).IsUnique();
+
+            entity.HasOne(e => e.Requisition)
+                .WithMany()
+                .HasForeignKey(e => e.RequisitionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasQueryFilter(e => e.TenantId == tenantContext.TenantId);
+        });
+
+        modelBuilder.Entity<CvDocument>(entity =>
+        {
+            entity.ToTable("cv_documents");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FileName).HasMaxLength(512).IsRequired();
+            // No length cap on the CV text: citation offsets point into it, so a truncating column
+            // would silently invalidate every span stored against it.
+            entity.Property(e => e.ExtractedText).IsRequired();
+
+            entity.HasOne(e => e.Applicant)
+                .WithOne(a => a.Cv)
+                .HasForeignKey<CvDocument>(e => e.ApplicantId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasQueryFilter(e => e.TenantId == tenantContext.TenantId);
+        });
+
+        modelBuilder.Entity<ExtractedProfile>(entity =>
+        {
+            entity.ToTable("extracted_profiles");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Unresolved).HasMaxLength(4000);
+            // Npgsql maps List<string> to text[] natively — no join table for what is a flat list
+            // of things as written on the CV.
+            entity.Property(e => e.Skills).HasColumnType("text[]");
+            entity.Property(e => e.Education).HasColumnType("text[]");
+            entity.Property(e => e.EmploymentGaps).HasColumnType("text[]");
+
+            entity.HasOne(e => e.Applicant)
+                .WithOne(a => a.Profile)
+                .HasForeignKey<ExtractedProfile>(e => e.ApplicantId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasQueryFilter(e => e.TenantId == tenantContext.TenantId);
+        });
+
+        modelBuilder.Entity<EmploymentSpan>(entity =>
+        {
+            entity.ToTable("employment_spans");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Employer).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.Title).HasMaxLength(256).IsRequired();
+            entity.Ignore(e => e.IsCurrent);
+
+            entity.HasOne(e => e.Profile)
+                .WithMany(p => p.Employment)
+                .HasForeignKey(e => e.ExtractedProfileId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasQueryFilter(e => e.TenantId == tenantContext.TenantId);
