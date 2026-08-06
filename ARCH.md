@@ -84,6 +84,44 @@ Routes checked against the fleet's existing modules (`legal`, `finance`, `compli
 collision. Two custom tabs is a real frontend cost, accepted for two named interactions and no
 others.
 
+### The custom-React seam, confirmed against source
+
+Previously this section said "custom React" without naming the seam, which is not a shape a build
+loop can act on. Pinned now, read from the platform checkout and the one product that has built
+against it — **not from documentation**:
+
+| Fact | Value | Where it was read |
+|---|---|---|
+| Package | **`@plenipo/ui`** | `plenipo/frontend/plenipo-ui/package.json` → `name` |
+| Version to pin | **`0.1.0-alpha.28`** — the *same* number as the .NET pin | `networthy-ui/package.json`; matches this repo's `Directory.Build.props` |
+| Registration | `defineModule("hiring", { tabs: { candidate: …, pipeline: … } })` | `plenipo-ui/src/index.ts` exports `defineModule`, `createModuleUiRegistry`, `resolveTabComponent` from `./lib/moduleUi` |
+| Mounting | `<PlenipoApp moduleUi={[hiring]} branding={{ name: "Hireworthy" }} />` | `networthy-ui/src/App.tsx` |
+| Project layout | `frontend/hireworthy-ui/` | mirrors `networthy/frontend/networthy-ui/` |
+| AppHost wiring | `builder.AddViteApp("hireworthy-ui", dir).WithPnpm()` | `Networthy.AppHost/AppHost.cs:80` |
+| Toolchain | React `^18.3.1`, Vite `^6.4.3`, Tailwind `^3.4.14` | `networthy-ui/package.json` — Tailwind **v3, not v4** |
+
+**The tab id is the key.** `defineModule` maps tab ids to components, so the manifest's
+`TabDescriptor.Id` (`candidate`, `pipeline`) is what the React side registers against — not the
+route. Renaming a tab id silently unmounts its component.
+
+### What is still NOT settled, and why it blocks #14 and #15
+
+**How `@plenipo/ui` resolves on a bare clone.** The .NET packages are vendored into `.packages/`
+precisely because they are not on nuget.org. `@plenipo/ui` is equally not on public npm — and
+`networthy` has **no `.npmrc` and no vendored tarball** anywhere in its worktree, so how its
+`npm install` ever succeeds is not visible from its repo.
+
+That is not a detail. Platform invariant: *keyless by default — a product's CI needs no external
+accounts.* If installing `@plenipo/ui` requires an authenticated registry, then adding a frontend
+**breaks `dotnet test` and CI on a bare clone**, which is the one thing this product's whole
+verification story rests on.
+
+So #14 and #15 stay in `Backlog`. Their seam is now pinned; their *buildability* is not, and
+promoting them would hand the build loop an issue that stalls at `npm install`. Resolving it is one
+of: the package is public and this is a non-issue · vendor the tarball as `.packages/` does for
+nupkgs · an `.npmrc` with a token, which would violate keyless CI and needs a human. **Open question
+OQ9.**
+
 ## 6. Data model
 
 `HiringDbContext` derives from **`ModuleDbContext`**, not `DbContext` (else `CreatedAt`/`UpdatedAt`
@@ -197,6 +235,7 @@ does not block its other two capabilities.
 
 | # | Question | Why it is still open |
 |---|---|---|
+| **OQ9** | **How does `@plenipo/ui` resolve on a bare clone?** Not on public npm; `networthy` has no `.npmrc` and no vendored tarball. Options: the package is public (non-issue) · vendor the tarball as `.packages/` does for nupkgs · an `.npmrc` token, which **violates keyless CI** and is a human's call. **Blocks #14 and #15** — their seam is pinned, their buildability is not. |
 | **OQ7** | Where do demographics for four-fifths monitoring come from, and what happens when absent (common and lawful)? | **Legally sensitive and not an engineering call.** Options: optional self-reported EEO fields with a reported coverage %, or omit and report only what exists. **A human decides.** Blocks `get_impact_report`, not the rest of epic 7 |
 | — | Does a rejected candidate get to see their evidence? | A differentiator with real support cost, and a GDPR Art. 22 question in the EU. Not v1; recorded so it is not rediscovered |
 
