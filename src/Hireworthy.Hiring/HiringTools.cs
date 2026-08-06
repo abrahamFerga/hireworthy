@@ -490,6 +490,133 @@ public sealed class HiringTools(HiringDbContext db, ITenantContext tenantContext
              + "This is a proposal — no candidate advances or is rejected without a human approving it.";
     }
 
+    /// <summary>
+    /// Advances named candidates to the next stage. <b>Approval-gated</b>, and the most
+    /// consequential write in the product.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Everything here THROWS rather than returning guidance</b>, and that is the opposite of
+    /// <c>screen_applicant</c> and <c>parse_cv</c>. Those are ungated, so the model is still in a
+    /// retry loop and a described problem is useful. This one runs only after a human has already
+    /// approved it — there is no retry loop left, and a returned string would resolve the approval
+    /// as <c>Executed</c> with <c>error: null</c>. Telling a hiring manager that twenty people were
+    /// advanced when they were not is precisely the failure this product exists to prevent.
+    /// </para>
+    /// <para>
+    /// <b>It refuses to advance a candidate nobody screened.</b> A decision with no evidence is the
+    /// thing the whole product argues against, so <see cref="Decision.ScreeningResultId"/> is
+    /// populated from the live screening or the call fails. It is also <b>atomic</b>: every
+    /// candidate is validated before any is written, because a partial advance would tell some
+    /// people they progressed and leave the rest in a state nobody chose.
+    /// </para>
+    /// </remarks>
+    [Description("Advance named candidates to the next stage. Requires human approval, and every candidate must already have been screened.")]
+    public async Task<string> AdvanceCandidatesAsync(
+        [Description("The applicant references to advance, e.g. ['APP-1001','APP-1002'].")] string[] references,
+        [Description("Why these candidates should advance. Recorded with the decision, permanently.")] string reason,
+        CancellationToken cancellationToken = default)
+    {
+        if (references is null || references.Length == 0)
+        {
+            throw new ArgumentException("Name at least one candidate to advance.", nameof(references));
+        }
+
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new ArgumentException(
+                "A reason is required. It is recorded with the decision and is what a rejected "
+              + "candidate, an auditor or a tribunal later reads.", nameof(reason));
+        }
+
+        var wanted = references.Select(r => r.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        var applicants = await db.Applicants
+            .Where(a => wanted.Contains(a.Reference))
+            .ToListAsync(cancellationToken);
+
+        // Validate EVERY candidate before writing ANY of them.
+        var missing = wanted.Where(w => !applicants.Any(a => a.Reference == w)).ToList();
+        if (missing.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"No applicant found with reference(s): {string.Join(", ", missing)}. Nothing was advanced.");
+        }
+
+        var screenings = await db.ScreeningResults
+            .Where(r => applicants.Select(a => a.Id).Contains(r.ApplicantId)
+                     && r.Status == ScreeningStatus.Proposed)
+            .ToListAsync(cancellationToken);
+
+        var unscreened = applicants
+            .Where(a => screenings.All(s => s.ApplicantId != a.Id))
+            .Select(a => a.Reference)
+            .ToList();
+
+        if (unscreened.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot advance {string.Join(", ", unscreened)} — nobody has screened them, so there "
+              + "is no evidence behind the decision. Screen them first with screen_applicant. "
+              + "Nothing was advanced.");
+        }
+
+        var terminal = applicants
+            .Where(a => NextStage(a.Stage) is null)
+            .Select(a => $"{a.Reference} ({a.Stage})")
+            .ToList();
+
+        if (terminal.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot advance {string.Join(", ", terminal)} — already at a final stage. Nothing was advanced.");
+        }
+
+        var tenantId = tenantContext.RequireTenantId();
+        var now = DateTimeOffset.UtcNow;
+        var moved = new List<string>();
+
+        foreach (var applicant in applicants)
+        {
+            var from = applicant.Stage;
+            var to = NextStage(from)!.Value;
+            var evidence = screenings.First(s => s.ApplicantId == applicant.Id);
+
+            applicant.Stage = to;
+
+            db.Decisions.Add(new Decision
+            {
+                TenantId = tenantId,
+                ApplicantId = applicant.Id,
+                Kind = DecisionKind.Advance,
+                FromStage = from,
+                ToStage = to,
+                Reason = reason,
+                ScreeningResultId = evidence.Id,
+                DecidedAt = now,
+            });
+
+            moved.Add($"{applicant.Reference} ({from} → {to})");
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return $"Advanced {applicants.Count} candidate(s): {string.Join("; ", moved)}. "
+             + $"Reason: {reason}. Each decision records the screening it rests on.";
+    }
+
+    /// <summary>The next stage, or null when there is nowhere further to go.</summary>
+    private static ApplicantStage? NextStage(ApplicantStage stage) => stage switch
+    {
+        ApplicantStage.Applied => ApplicantStage.Screening,
+        ApplicantStage.Screening => ApplicantStage.Interview,
+        ApplicantStage.Interview => ApplicantStage.Offer,
+        ApplicantStage.Offer => ApplicantStage.Hired,
+        // Hired and Rejected are terminal. Rejected is deliberately NOT reversible by advancing:
+        // un-rejecting somebody is a new decision a human makes explicitly, not a side effect.
+        _ => null,
+    };
+
     private static string FormatRole(EmploymentSpan e) =>
         $"{e.Title} at {e.Employer} ({e.StartedOn:yyyy-MM} to {(e.EndedOn is null ? "present" : e.EndedOn.Value.ToString("yyyy-MM"))})";
 

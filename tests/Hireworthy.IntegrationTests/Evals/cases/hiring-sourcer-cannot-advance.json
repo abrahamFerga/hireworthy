@@ -1,0 +1,11 @@
+{
+  "name": "hiring-sourcer-cannot-advance",
+  "module": "hiring",
+  "message": "Advance APP-1001 to the next stage",
+  "role": "hiring-sourcer",
+  "expectToolCalls": [],
+  "forbidToolCalls": ["advance_candidates", "propose_rubric"],
+  "expectApproval": false,
+  "replyMustContain": [],
+  "replyMustNotContain": []
+}

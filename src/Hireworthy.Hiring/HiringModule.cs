@@ -71,6 +71,7 @@ public sealed class HiringModule : IModule
             "Show me applicant APP-1001",
             "Parse the CV for APP-1001",
             "Screen applicant APP-1001 against the approved rubric",
+            "Advance APP-1001 to the next stage",
         ],
         Roles = ["hiring-sourcer", "hiring-recruiter", "hiring-talent-lead", "hiring-compliance"],
         Tools =
@@ -113,6 +114,15 @@ public sealed class HiringModule : IModule
                   + "quote the span of the CV that evidences it, verbatim, or be marked unresolved.",
                 Permission = Permissions.ForTool(Id, "screen_applicant"),
                 // Ungated — ADR-0004. A proposal; nothing advances until a human approves.
+            },
+            new ToolDescriptor
+            {
+                Name = "advance_candidates",
+                Description =
+                    "Advance named candidates to the next stage. Requires human approval, and every "
+                  + "candidate must already have been screened.",
+                Permission = Permissions.ForTool(Id, "advance_candidates"),
+                RequiresApproval = true,
             },
             new ToolDescriptor
             {

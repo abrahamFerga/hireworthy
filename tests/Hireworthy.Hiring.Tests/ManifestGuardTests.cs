@@ -106,7 +106,7 @@ public sealed class ManifestGuardTests
         // As epics 3+ land, advance_candidates and reject_candidate join this list. A write that
         // reaches this module ungated would let the assistant reject a job applicant with no
         // accountable human — the single failure this product exists to prevent.
-        string[] writes = ["propose_rubric"];
+        string[] writes = ["propose_rubric", "advance_candidates"];
 
         var executable = BuildToolSourceTools();
 

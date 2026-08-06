@@ -56,6 +56,8 @@ public sealed class HiringDbContext(
 
     public DbSet<CriterionScore> CriterionScores => Set<CriterionScore>();
 
+    public DbSet<Decision> Decisions => Set<Decision>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -224,6 +226,32 @@ public sealed class HiringDbContext(
                 .WithMany(r => r.Scores)
                 .HasForeignKey(e => e.ScreeningResultId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasQueryFilter(e => e.TenantId == tenantContext.TenantId);
+        });
+
+        modelBuilder.Entity<Decision>(entity =>
+        {
+            entity.ToTable("decisions");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Kind).HasConversion<string>().HasMaxLength(32);
+            entity.Property(e => e.FromStage).HasConversion<string>().HasMaxLength(32);
+            entity.Property(e => e.ToStage).HasConversion<string>().HasMaxLength(32);
+            entity.Property(e => e.Reason).HasMaxLength(4000).IsRequired();
+            entity.Property(e => e.ApprovedBy).HasMaxLength(256);
+
+            entity.HasOne(e => e.Applicant)
+                .WithMany()
+                .HasForeignKey(e => e.ApplicantId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Restrict: the evidence a decision rests on must never be deletable out from under it.
+            // A decision whose evidence vanished is exactly the thing this product exists to prevent
+            // — see ADR-0008 for how the tombstone survives content deletion instead.
+            entity.HasOne(e => e.Evidence)
+                .WithMany()
+                .HasForeignKey(e => e.ScreeningResultId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasQueryFilter(e => e.TenantId == tenantContext.TenantId);
         });

@@ -67,6 +67,16 @@ public sealed class HiringToolSource : IModuleToolSource
             new ModuleTool
             {
                 ModuleId = ModuleId,
+                Name = "advance_candidates",
+                Permission = Permissions.ForTool(ModuleId, "advance_candidates"),
+                Function = AIFunctionFactory.Create(tools.AdvanceCandidatesAsync, name: "advance_candidates"),
+                // A real person is told they progressed, and it cannot be un-told. Gated in BOTH
+                // places; the runner unions the flags, so reviewing only one hides a broken gate.
+                RequiresApproval = true,
+            },
+            new ModuleTool
+            {
+                ModuleId = ModuleId,
                 Name = "propose_rubric",
                 Permission = Permissions.ForTool(ModuleId, "propose_rubric"),
                 Function = AIFunctionFactory.Create(tools.ProposeRubricAsync, name: "propose_rubric"),
