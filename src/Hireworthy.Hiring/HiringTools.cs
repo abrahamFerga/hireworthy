@@ -18,6 +18,23 @@ public sealed record ProposedCriterion(string Name, string Requirement, int Weig
 /// <param name="EndedOn">Last month as <c>yyyy-MM</c>, or null/empty if this is the current role.</param>
 public sealed record ExtractedRole(string Employer, string Title, string StartedOn, string? EndedOn);
 
+/// <summary>One criterion's score for one applicant, with the CV span that evidences it.</summary>
+/// <param name="CriterionName">The rubric criterion being scored, exactly as the rubric names it.</param>
+/// <param name="Points">0–5. Use 0 with <paramref name="Unresolved"/> when the CV does not say.</param>
+/// <param name="CitationText">The span of the CV that evidences the score, quoted VERBATIM.</param>
+/// <param name="CitationStart">Inclusive character offset of that span in the CV text.</param>
+/// <param name="CitationEnd">Exclusive character offset of that span in the CV text.</param>
+/// <param name="Unresolved">True when the CV does not evidence this criterion. Flag it; never guess.</param>
+/// <param name="Note">Why the quoted span supports the score.</param>
+public sealed record ScoredCriterion(
+    string CriterionName,
+    int Points,
+    string? CitationText,
+    int CitationStart,
+    int CitationEnd,
+    bool Unresolved,
+    string? Note);
+
 /// <summary>
 /// The hiring module's agent tools for epic 1 — requisitions and the approved rubric.
 /// </summary>
@@ -327,6 +344,150 @@ public sealed class HiringTools(HiringDbContext db, ITenantContext tenantContext
              + $"{profile.Education.Count} education entr(y/ies) for {applicant.Reference} "
              + $"({applicant.FullName}); {gapText}."
              + (unresolved is null ? "" : $" Unresolved: {unresolved}");
+    }
+
+    /// <summary>
+    /// Scores one applicant against the requisition's approved rubric. <b>Not approval-gated</b>
+    /// (ADR-0004) — it writes a proposal and moves nobody's stage.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Every citation is verified against the CV before anything is written.</b> If one does not
+    /// occur verbatim at the offsets given, nothing persists and the tool says which criterion and
+    /// what the CV actually says there. That is ADR-0005, and enforcing it here rather than in a
+    /// later check is the point: a fabricated quote that reached a recruiter's screen has already
+    /// done its damage.
+    /// </para>
+    /// <para>
+    /// It refuses to score against a rubric that is not <see cref="RubricStatus.Approved"/>. Scoring
+    /// 180 people against criteria a human never accepted is precisely what the approval gate on
+    /// <c>propose_rubric</c> exists to prevent, and it would be trivially undone by letting this
+    /// tool read a proposed rubric.
+    /// </para>
+    /// </remarks>
+    [Description("Score one applicant against their requisition's approved rubric. Every criterion must quote the span of the CV that evidences it, verbatim, or be marked unresolved.")]
+    public async Task<string> ScreenApplicantAsync(
+        [Description("The applicant's reference, e.g. 'APP-1001'.")] string reference,
+        [Description("One entry per rubric criterion. Quote the CV verbatim; do not paraphrase.")] ScoredCriterion[] scores,
+        CancellationToken cancellationToken = default)
+    {
+        if (scores is null || scores.Length == 0)
+        {
+            return "No scores were supplied. Score every criterion on the approved rubric, or mark it unresolved.";
+        }
+
+        var applicant = await db.Applicants
+            .Include(a => a.Cv)
+            .Include(a => a.Requisition)
+            .FirstOrDefaultAsync(a => a.Reference == reference, cancellationToken);
+
+        if (applicant is null)
+        {
+            return $"No applicant found with reference \"{reference}\".";
+        }
+
+        if (applicant.Cv is null)
+        {
+            return $"{applicant.Reference} has no CV on file, so nothing can be cited. Upload one first.";
+        }
+
+        var rubric = await db.Rubrics
+            .Include(r => r.Criteria)
+            .Where(r => r.RequisitionId == applicant.RequisitionId && r.Status == RubricStatus.Approved)
+            .OrderByDescending(r => r.Version)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (rubric is null)
+        {
+            return $"{applicant.Requisition?.Reference ?? "That requisition"} has no APPROVED rubric. "
+                 + "Propose one with propose_rubric and have it approved before screening anybody — "
+                 + "nobody may be measured against criteria a human has not accepted.";
+        }
+
+        var criteriaByName = rubric.Criteria.ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
+        var source = applicant.Cv.ExtractedText;
+        var rows = new List<CriterionScore>();
+        var tenantId = tenantContext.RequireTenantId();
+
+        foreach (var scored in scores)
+        {
+            if (!criteriaByName.TryGetValue(scored.CriterionName, out var criterion))
+            {
+                return $"\"{scored.CriterionName}\" is not a criterion on approved rubric v{rubric.Version}. "
+                     + $"Its criteria are: {string.Join(", ", rubric.Criteria.Select(c => c.Name))}.";
+            }
+
+            if (scored.Points is < 0 or > CriterionScore.MaxPoints)
+            {
+                return $"Criterion \"{scored.CriterionName}\" scored {scored.Points}; scores are 0–{CriterionScore.MaxPoints}.";
+            }
+
+            // The guarantee. An unresolved criterion is the ONLY way to score without evidence, and
+            // it costs the candidate the points — so there is no incentive to use it to dodge the check.
+            if (!scored.Unresolved)
+            {
+                var verdict = CitationGrounding.Verify(
+                    source, scored.CitationText, scored.CitationStart, scored.CitationEnd);
+
+                if (verdict is not GroundingVerdict.Ok)
+                {
+                    return CitationGrounding.Explain(
+                        verdict, scored.CriterionName, source, scored.CitationStart, scored.CitationEnd);
+                }
+            }
+
+            rows.Add(new CriterionScore
+            {
+                TenantId = tenantId,
+                RubricCriterionId = criterion.Id,
+                CriterionName = criterion.Name,
+                Points = scored.Unresolved ? 0 : scored.Points,
+                Unresolved = scored.Unresolved,
+                CitationText = scored.Unresolved ? null : scored.CitationText,
+                CitationStart = scored.Unresolved ? 0 : scored.CitationStart,
+                CitationEnd = scored.Unresolved ? 0 : scored.CitationEnd,
+                Note = scored.Note,
+            });
+        }
+
+        var weights = rubric.Criteria.ToDictionary(c => c.Id, c => c.Weight);
+        var (total, max, unresolved) = ScreeningResult.ComputeTotal(rows, weights);
+
+        // Re-screening supersedes rather than accumulating: an applicant has one current score
+        // against one rubric version, and two live results would make "their score" ambiguous at
+        // exactly the moment somebody is deciding their application.
+        var previous = await db.ScreeningResults
+            .Where(r => r.ApplicantId == applicant.Id && r.Status == ScreeningStatus.Proposed)
+            .ToListAsync(cancellationToken);
+
+        foreach (var stale in previous)
+        {
+            stale.Status = ScreeningStatus.Superseded;
+        }
+
+        db.ScreeningResults.Add(new ScreeningResult
+        {
+            TenantId = tenantId,
+            ApplicantId = applicant.Id,
+            RubricId = rubric.Id,
+            RubricVersion = rubric.Version,
+            Status = ScreeningStatus.Proposed,
+            ScreenedAt = DateTimeOffset.UtcNow,
+            TotalScore = total,
+            MaxScore = max,
+            UnresolvedCount = unresolved,
+            Scores = rows,
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        var unresolvedText = unresolved == 0
+            ? "every criterion evidenced"
+            : $"{unresolved} criterion(s) the CV does not evidence";
+
+        return $"Scored {applicant.Reference} ({applicant.FullName}) against rubric v{rubric.Version}: "
+             + $"{total}/{max}, {unresolvedText}. Every score cites the CV verbatim. "
+             + "This is a proposal — no candidate advances or is rejected without a human approving it.";
     }
 
     private static string FormatRole(EmploymentSpan e) =>

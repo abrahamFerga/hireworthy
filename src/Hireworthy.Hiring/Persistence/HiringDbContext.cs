@@ -52,6 +52,10 @@ public sealed class HiringDbContext(
 
     public DbSet<EmploymentSpan> EmploymentSpans => Set<EmploymentSpan>();
 
+    public DbSet<ScreeningResult> ScreeningResults => Set<ScreeningResult>();
+
+    public DbSet<CriterionScore> CriterionScores => Set<CriterionScore>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -179,6 +183,46 @@ public sealed class HiringDbContext(
             entity.HasOne(e => e.Profile)
                 .WithMany(p => p.Employment)
                 .HasForeignKey(e => e.ExtractedProfileId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasQueryFilter(e => e.TenantId == tenantContext.TenantId);
+        });
+
+        modelBuilder.Entity<ScreeningResult>(entity =>
+        {
+            entity.ToTable("screening_results");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
+
+            entity.HasOne(e => e.Applicant)
+                .WithMany()
+                .HasForeignKey(e => e.ApplicantId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Restrict, not Cascade: a rubric row must never be deletable out from under the scores
+            // that pin its version. Losing the yardstick would make every score it produced
+            // unexplainable, which is the one thing this product cannot allow.
+            entity.HasOne(e => e.Rubric)
+                .WithMany()
+                .HasForeignKey(e => e.RubricId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasQueryFilter(e => e.TenantId == tenantContext.TenantId);
+        });
+
+        modelBuilder.Entity<CriterionScore>(entity =>
+        {
+            entity.ToTable("criterion_scores");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CriterionName).HasMaxLength(256).IsRequired();
+            // No length cap: the citation is a verbatim span of the CV, and truncating it would
+            // break the containment check that is the product's central guarantee.
+            entity.Property(e => e.CitationText);
+            entity.Property(e => e.Note).HasMaxLength(2000);
+
+            entity.HasOne(e => e.ScreeningResult)
+                .WithMany(r => r.Scores)
+                .HasForeignKey(e => e.ScreeningResultId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasQueryFilter(e => e.TenantId == tenantContext.TenantId);

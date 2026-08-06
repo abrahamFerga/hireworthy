@@ -55,9 +55,18 @@ public sealed class SmokeTests(IntegrationFixture fixture)
             .ToList();
 
         Assert.Contains("REQ-142", references);
-        // Seeded with no rubric, which is the correct empty state: nobody may be scored until a
-        // human has approved the criteria.
-        Assert.All(rows.EnumerateArray(), r => Assert.Equal("None", r.GetProperty("rubric").GetString()));
+
+        // Per-requisition rather than a blanket assertion, and deliberately tightened rather than
+        // relaxed when the seed gained an approved rubric: REQ-142 has one so screening is
+        // demonstrable on a fresh clone, and the other two do NOT — which is the state that proves
+        // "no approved rubric" is still the default and nobody is scored by accident.
+        string RubricOf(string reference) => rows.EnumerateArray()
+            .Single(r => r.GetProperty("reference").GetString() == reference)
+            .GetProperty("rubric").GetString()!;
+
+        Assert.Equal("Approved", RubricOf("REQ-142"));
+        Assert.Equal("None", RubricOf("REQ-150"));
+        Assert.Equal("None", RubricOf("REQ-155"));
     }
 
     [Fact]
@@ -86,11 +95,12 @@ public sealed class SmokeTests(IntegrationFixture fixture)
         var tools = hiring.GetProperty("tools").EnumerateArray()
             .ToDictionary(t => t.GetProperty("permission").GetString()!, t => t);
 
-        Assert.Equal(5, tools.Count);
+        Assert.Equal(6, tools.Count);
         Assert.True(tools.ContainsKey("tools.hiring.list_requisitions"));
         Assert.True(tools.ContainsKey("tools.hiring.get_requisition"));
         Assert.True(tools.ContainsKey("tools.hiring.get_applicant"));
         Assert.True(tools.ContainsKey("tools.hiring.parse_cv"));
+        Assert.True(tools.ContainsKey("tools.hiring.screen_applicant"));
 
         // The gate, asserted where the platform reports it rather than where we declared it.
         Assert.True(tools["tools.hiring.propose_rubric"].GetProperty("requiresApproval").GetBoolean(),
@@ -101,6 +111,7 @@ public sealed class SmokeTests(IntegrationFixture fixture)
         // data recomputable from the CV and moves nobody's stage. If a future change makes it
         // consequential, this assertion is the one that must be revisited first.
         Assert.False(tools["tools.hiring.parse_cv"].GetProperty("requiresApproval").GetBoolean());
+        Assert.False(tools["tools.hiring.screen_applicant"].GetProperty("requiresApproval").GetBoolean());
 
         // Everything the module does is audited: in this product the audit trail is a deliverable
         // a bias auditor asks for, not merely a safety net.

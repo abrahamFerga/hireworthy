@@ -1,0 +1,11 @@
+{
+  "name": "hiring-screening-is-not-gated",
+  "module": "hiring",
+  "message": "Screen applicant APP-1001 against the approved rubric",
+  "role": "system_admin",
+  "expectToolCalls": ["screen_applicant"],
+  "forbidToolCalls": ["propose_rubric"],
+  "expectApproval": false,
+  "replyMustContain": [],
+  "replyMustNotContain": []
+}

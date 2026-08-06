@@ -53,6 +53,11 @@ public sealed class HiringModule : IModule
           + "history, skills and education you read from it. Give dates as yyyy-MM and leave the end "
           + "date empty for a current role; the system works out the employment gaps itself, so do "
           + "not assert gaps yourself. Flag anything you cannot resolve rather than guessing it. "
+          + "Use screen_applicant to score a candidate against the requisition's APPROVED rubric. "
+          + "Every criterion must quote the span of the CV that evidences it, word for word, with the "
+          + "exact character offsets — a paraphrase is rejected, and so is a quotation that is not "
+          + "really there. If the CV does not evidence a criterion, mark it unresolved; never score "
+          + "it from memory or from what the candidate probably meant. "
           + "Never predict how well a candidate would perform in the job: this system evidences and "
           + "cites, it does not forecast job performance. "
           + "Never draw an inference from a candidate's name, photograph, age, gender, nationality, "
@@ -65,6 +70,7 @@ public sealed class HiringModule : IModule
             "Propose a rubric for REQ-142 from its job description",
             "Show me applicant APP-1001",
             "Parse the CV for APP-1001",
+            "Screen applicant APP-1001 against the approved rubric",
         ],
         Roles = ["hiring-sourcer", "hiring-recruiter", "hiring-talent-lead", "hiring-compliance"],
         Tools =
@@ -98,6 +104,15 @@ public sealed class HiringModule : IModule
                   + "Dates are yyyy-MM; leave the end date empty for a current role.",
                 Permission = Permissions.ForTool(Id, "parse_cv"),
                 // Deliberately ungated — ADR-0004. Derived, recomputable, and it moves no stage.
+            },
+            new ToolDescriptor
+            {
+                Name = "screen_applicant",
+                Description =
+                    "Score one applicant against their requisition's approved rubric. Every criterion must "
+                  + "quote the span of the CV that evidences it, verbatim, or be marked unresolved.",
+                Permission = Permissions.ForTool(Id, "screen_applicant"),
+                // Ungated — ADR-0004. A proposal; nothing advances until a human approves.
             },
             new ToolDescriptor
             {
@@ -250,7 +265,92 @@ public sealed class HiringModule : IModule
                 await db.SaveChangesAsync(cancellationToken);
             }
         }
+
+        if (!await db.Rubrics.AnyAsync(cancellationToken))
+        {
+            var backend = await db.Requisitions
+                .FirstOrDefaultAsync(r => r.Reference == "REQ-142", cancellationToken);
+
+            if (backend is not null)
+            {
+                db.Rubrics.Add(StarterRubric(tenantId, backend.Id));
+                await db.SaveChangesAsync(cancellationToken);
+            }
+        }
     }
+
+    /// <summary>
+    /// An already-approved rubric on REQ-142, so screening is demonstrable on a fresh clone.
+    /// </summary>
+    /// <remarks>
+    /// <b>Seeding this as Approved does not weaken the approval gate</b>, and the distinction is
+    /// worth stating because it looks like it might. The gate lives on <c>propose_rubric</c>, which
+    /// is what the assistant can reach; this is dev fixture data standing in for "a recruiter
+    /// already approved these criteria last week", exactly as the seeded requisitions stand in for
+    /// reqs somebody already opened. Nothing in the module can move a rubric to Approved — that
+    /// still requires a human clearing the parked call.
+    /// <para>
+    /// The criteria are derived from REQ-142's own job description text, and each is checkable
+    /// against a CV, because a criterion that cannot be evidenced is one the screener can only
+    /// guess at.
+    /// </para>
+    /// </remarks>
+    private static Rubric StarterRubric(Guid tenantId, Guid requisitionId) => new()
+    {
+        TenantId = tenantId,
+        RequisitionId = requisitionId,
+        Version = 1,
+        Status = RubricStatus.Approved,
+        ApprovedBy = "Priya Raman",
+        ApprovedAt = new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero),
+        Rationale =
+            "Derived from REQ-142. The job description leads on shipping and operating production "
+          + "Python, on-call ownership, and written communication across time zones; payments domain "
+          + "knowledge is explicitly 'a strong plus but not required', so it is weighted low.",
+        Criteria =
+        [
+            new RubricCriterion
+            {
+                TenantId = tenantId,
+                Name = "Production Python experience",
+                Requirement = "Has shipped and operated Python services in production for several years.",
+                Weight = 5,
+                Ordinal = 0,
+            },
+            new RubricCriterion
+            {
+                TenantId = tenantId,
+                Name = "On-call ownership",
+                Requirement = "Has been on call for systems they built, not only for systems they inherited.",
+                Weight = 4,
+                Ordinal = 1,
+            },
+            new RubricCriterion
+            {
+                TenantId = tenantId,
+                Name = "Written communication",
+                Requirement = "Evidence of design documents or written decision-making, not just verbal collaboration.",
+                Weight = 4,
+                Ordinal = 2,
+            },
+            new RubricCriterion
+            {
+                TenantId = tenantId,
+                Name = "Mentoring",
+                Requirement = "Has mentored junior engineers; the role carries two.",
+                Weight = 3,
+                Ordinal = 3,
+            },
+            new RubricCriterion
+            {
+                TenantId = tenantId,
+                Name = "Payments or ledger domain",
+                Requirement = "Payment rails, ledger design or financial reconciliation. A plus, not a requirement.",
+                Weight = 2,
+                Ordinal = 4,
+            },
+        ],
+    };
 
     /// <summary>
     /// Two applicants on REQ-142, each with a CV as text.
