@@ -18,9 +18,12 @@ jobs:
         with:
           global-json-file: global.json
 
+      # No version pinned here on purpose: action-setup reads `packageManager` from the UI's
+      # package.json, so CI, a developer's machine and the AppHost's .WithPnpm() all resolve the
+      # same pnpm. Pinning a second version in this file is how CI drifted from local once already.
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          package_json_file: frontend/hireworthy-ui/package.json
 
       - uses: actions/setup-node@v4
         with:

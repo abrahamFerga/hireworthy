@@ -1,6 +1,7 @@
 {
   "name": "hireworthy-ui",
   "private": true,
+  "packageManager": "pnpm@11.9.0",
   "version": "0.0.0",
   "description": "Hireworthy's branded app entry: the Plenipo shell plus the Candidate tab, which renders a CV with its cited spans highlighted in place (ADR-0011).",
   "type": "module",
