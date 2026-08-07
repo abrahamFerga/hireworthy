@@ -197,7 +197,26 @@ public sealed class PipelineTests(IntegrationFixture fixture)
         using var client = fixture.AdminClient();
         var catalog = await client.GetFromJsonAsync<JsonElement>("/api/admin/security/catalog");
 
-        var permissions = catalog.GetRawText();
-        Assert.Contains("tools.hiring.list_applicants", permissions, StringComparison.Ordinal);
+        // Parsed, not substring-matched. A GetRawText().Contains(...) asserts only that the string
+        // appears SOMEWHERE in the payload — it cannot see requiresApproval at all, so the
+        // is_not_approval_gated half of this test's name would be checked by nothing.
+        var hiring = catalog.GetProperty("modules").EnumerateArray()
+            .Single(m => m.GetProperty("id").GetString() == "hiring");
+
+        var tools = hiring.GetProperty("tools").EnumerateArray()
+            .ToDictionary(t => t.GetProperty("permission").GetString()!, t => t);
+
+        Assert.True(tools.ContainsKey("tools.hiring.list_applicants"),
+            "list_applicants is not in the security catalog. A tool declared in the manifest but "
+          + "not the tool source is silently never callable, and the Pipeline board 403s.");
+
+        // The gate, asserted where the platform reports it rather than where we declared it. This
+        // is the property the permission grant in Program.cs is defended on: the board's tool is a
+        // READ, so widening it to hiring-sourcer and hiring-recruiter grants no write.
+        Assert.False(
+            tools["tools.hiring.list_applicants"].GetProperty("requiresApproval").GetBoolean(),
+            "list_applicants is approval-gated. A read tool behind the gate parks every board "
+          + "refresh on a human, and the grant this tool's permission widening rests on stops "
+          + "being a pure read.");
     }
 }
