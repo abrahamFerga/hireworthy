@@ -183,4 +183,19 @@ public sealed class ScreeningTotalTests
         Assert.Equal(3, total);
         Assert.Equal(5, max);
     }
+
+    [Fact]
+    public void A_partial_score_set_is_still_measured_against_the_whole_rubric()
+    {
+        // Issue #44. Scoring only the criterion the CV happens to evidence must not shrink the
+        // yardstick — that is ADR-0004's "quietly reward a vague CV", reached by omission instead
+        // of by marking unresolved. The maximum belongs to the rubric, not to the supplied set.
+        var (total, max, unresolved) = ScreeningResult.ComputeTotal(
+            [Score(A, 5)],
+            new Dictionary<Guid, int> { [A] = 5, [B] = 1 });
+
+        Assert.Equal(25, total);
+        Assert.Equal(30, max);
+        Assert.Equal(0, unresolved);
+    }
 }

@@ -450,6 +450,27 @@ public sealed class HiringTools(HiringDbContext db, ITenantContext tenantContext
             });
         }
 
+        // An OMITTED criterion must not be cheaper than one marked unresolved. Scoring only the
+        // criterion a CV happens to evidence used to read "25/25, every criterion evidenced" while
+        // four criteria were never looked at — outranking a candidate scored honestly at 80/90 on
+        // the same rubric. Refused rather than back-filled as unresolved on the model's behalf:
+        // unresolved means "the CV does not evidence this", which is a judgement (ADR-0004), and
+        // this product does not record judgements nobody made. The message names what is missing so
+        // the refusal is recoverable in the next turn.
+        var scoredCriterionIds = rows.Select(r => r.RubricCriterionId).ToHashSet();
+        var missing = rubric.Criteria
+            .Where(c => !scoredCriterionIds.Contains(c.Id))
+            .OrderBy(c => c.Ordinal)
+            .Select(c => c.Name)
+            .ToList();
+
+        if (missing.Count > 0)
+        {
+            return $"Every criterion on approved rubric v{rubric.Version} must be scored or marked "
+                 + "unresolved; an omitted criterion shrinks the maximum and inflates the candidate. "
+                 + $"Missing: {string.Join(", ", missing)}.";
+        }
+
         var weights = rubric.Criteria.ToDictionary(c => c.Id, c => c.Weight);
         var (total, max, unresolved) = ScreeningResult.ComputeTotal(rows, weights);
 

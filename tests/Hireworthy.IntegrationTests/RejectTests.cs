@@ -48,8 +48,9 @@ public sealed class RejectTests(IntegrationFixture fixture)
 
         await tools.ScreenApplicantAsync(reference,
         [
-            new ScoredCriterion("Production Python experience", 1, quote, start, start + quote.Length, false,
+            new ScoredCriterion(SeededRubric.PythonExperience, 1, quote, start, start + quote.Length, false,
                 "Mentions Python but evidences no production ownership."),
+            .. SeededRubric.UnresolvedExcept(SeededRubric.PythonExperience),
         ]);
 
         return reference;
