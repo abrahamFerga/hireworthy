@@ -237,3 +237,42 @@ These are the platform, restated. Recorded here so the next agent does not re-li
 - The append-only audit database — the platform's.
 - OpenTelemetry, the Aspire dashboard, the job processor, `ISecretVault` — the platform's.
 - **One module** — decided in PLAN.md §3 with its reasoning (OQ8). Not re-argued.
+
+---
+
+## ADR-0011 — The custom-React surface is one Vite app under `frontend/`, pinned to the platform's own version
+
+**Status:** Accepted · 2026-08-06
+
+**Context.** ARCH.md §5 committed two tabs to custom React and justified *why* — a span-anchored
+overlay on a CV and a drag-and-drop pipeline, neither expressible declaratively. It did not say
+*how*, and its own guidance said to confirm the `moduleUi` name against the platform's frontend
+package before committing. That was never done, so "custom React" was a stated intention rather than
+a shape anything could be built against.
+
+The real alternative was to drop custom React entirely and accept server-driven tables — which would
+mean the citation guarantee stays invisible to the recruiter, since a declarative grid cannot
+highlight a quoted span inside the document it came from.
+
+**Decision.** One Vite app at `frontend/hireworthy-ui/`, consuming **`@plenipo/ui`** pinned to
+**`0.1.0-alpha.28`** — deliberately the same version string as the .NET packages, so a platform
+upgrade moves both halves together or neither. Tabs register by **tab id** via
+`defineModule("hiring", { tabs: { … } })` and mount through `<PlenipoApp moduleUi={[…]} />`. The
+AppHost serves it with `AddViteApp(...).WithPnpm()`. React 18, Vite 6, Tailwind **v3**.
+
+Every value above was read from `plenipo/frontend/plenipo-ui/` and `networthy`'s frontend, not from
+documentation — the platform's docs have been wrong about their own API names before.
+
+**Consequences.** The product gains a frontend build, a second test surface, and a second place to
+rot; that cost is accepted for exactly two interactions and no others, and any third custom tab
+should be argued separately. The version coupling is deliberate: a mismatched `@plenipo/ui` against
+a `Plenipo.*` pin is the kind of drift that presents as a blank tab with no error.
+
+**The install path was the open risk, and it is now closed.** `@plenipo/ui` is on the **public**
+npm registry: a probe install with a deliberately blank `_authToken` exited 0 with
+`0.1.0-alpha.28` on disk. Keyless CI holds and #14/#15 are unblocked.
+
+Worth carrying forward, because it is counter-intuitive: **the two halves of the platform distribute
+differently.** The .NET packages are not on nuget.org and must be vendored into `.packages/`; the
+npm package is public and must not be. Treating them the same — either by vendoring the tarball or
+by assuming the nupkgs are public — is the error this records against.
