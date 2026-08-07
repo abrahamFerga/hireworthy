@@ -76,3 +76,25 @@ GET {{host}}/api/admin/usage?days=30
 X-Dev-Subject: {{subject}}
 X-Dev-Tenant: {{tenant}}
 X-Dev-Roles: {{roles}}
+
+
+### The Candidate tab's data endpoint — applicant, live screening, and the CV already split into
+### highlight segments. The segmenting is server-side on purpose (CvHighlighting): the span
+### arithmetic is the product's central guarantee and belongs where the test ladder can assert it.
+GET {{host}}/api/hiring/candidates/APP-1001
+X-Dev-Subject: {{subject}}
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: {{roles}}
+
+### Same endpoint as compliance — MUST be 403. It returns a candidate CV, the most personal payload
+### in the product, and that tier reads impact reports only.
+GET {{host}}/api/hiring/candidates/APP-1001
+X-Dev-Subject: it-compliance
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: hiring-compliance
+
+### Unknown reference — MUST be 404, not an empty shell.
+GET {{host}}/api/hiring/candidates/APP-NOPE
+X-Dev-Subject: {{subject}}
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: {{roles}}

@@ -45,7 +45,7 @@ var redis = builder.AddRedis("plenipo-redis");
 // Deployment AI defaults live in the Host's appsettings (Development = Mock, Production = None);
 // real provider credentials are configured per tenant under Admin → AI Settings and stored
 // write-only in Plenipo's secret vault. There is no deployment-level key slot by design.
-builder.AddProject<Projects.Hireworthy_Host>("hireworthy-api")
+var api = builder.AddProject<Projects.Hireworthy_Host>("hireworthy-api")
     // Propagated EXPLICITLY, and this is load-bearing rather than tidy. Aspire launches the API
     // with `--no-launch-profile`, so the API never sees its own launchSettings — it inherits only
     // what is set here. Left unset, the API runs as Production, and AddPlenipoPlatform() throws
@@ -73,6 +73,17 @@ builder.AddProject<Projects.Hireworthy_Host>("hireworthy-api")
     // Waiting on the server keeps the real intent (do not start before Postgres accepts
     // connections) with no deadlock. Do not "fix" a slow first boot by putting these back.
     .WaitFor(postgres)
+    .WithExternalHttpEndpoints();
+
+// The branded shell: the stock Plenipo UI plus Hireworthy's Candidate tab (ADR-0011).
+// @plenipo/ui installs from the PUBLIC npm registry — no .npmrc, no token — so this builds on a
+// bare clone and CI stays keyless. VITE_API_TARGET points the dev proxy at the API, because the
+// published @plenipo/ui dist bakes an empty VITE_API_BASE and asks same-origin.
+var ui = builder.AddViteApp("hireworthy-ui", "../../frontend/hireworthy-ui")
+    .WithPnpm()
+    .WithEnvironment("VITE_BRAND_NAME", "Hireworthy")
+    .WithReference(api)
+    .WaitFor(api)
     .WithExternalHttpEndpoints();
 
 builder.Build().Run();

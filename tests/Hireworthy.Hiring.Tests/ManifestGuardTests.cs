@@ -106,7 +106,7 @@ public sealed class ManifestGuardTests
         // As epics 3+ land, advance_candidates and reject_candidate join this list. A write that
         // reaches this module ungated would let the assistant reject a job applicant with no
         // accountable human — the single failure this product exists to prevent.
-        string[] writes = ["propose_rubric", "advance_candidates"];
+        string[] writes = ["propose_rubric", "advance_candidates", "reject_candidate"];
 
         var executable = BuildToolSourceTools();
 
@@ -117,6 +117,27 @@ public sealed class ManifestGuardTests
 
             Assert.True(descriptor.RequiresApproval, $"Manifest descriptor for '{name}' is not approval-gated.");
             Assert.True(tool.RequiresApproval, $"ModuleTool for '{name}' is not approval-gated.");
+        }
+    }
+
+    [Fact]
+    public void Every_approval_gated_tool_is_named_in_the_agent_instructions()
+    {
+        // Registration and instruction are separate edits, and forgetting the second one is silent:
+        // the tool still works, the gate still fires, every other guard stays green — the model just
+        // has no guidance about the most consequential thing it can do, including the instruction
+        // never to report the write as done before a human approves it.
+        //
+        // This test exists because exactly that happened: advance_candidates was registered in #12
+        // and its instruction edit silently failed to apply, and nothing caught it.
+        var instructions = Module.Manifest.AgentInstructions ?? string.Empty;
+
+        foreach (var tool in Module.Manifest.Tools.Where(t => t.RequiresApproval))
+        {
+            Assert.True(instructions.Contains(tool.Name, StringComparison.Ordinal),
+                $"Approval-gated tool '{tool.Name}' is not mentioned in AgentInstructions. "
+              + "A gated write the model has no instruction about is the one most likely to be "
+              + "misreported to a user as already done.");
         }
     }
 

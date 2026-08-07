@@ -58,6 +58,13 @@ public sealed class HiringModule : IModule
           + "exact character offsets — a paraphrase is rejected, and so is a quotation that is not "
           + "really there. If the CV does not evidence a criterion, mark it unresolved; never score "
           + "it from memory or from what the candidate probably meant. "
+          + "Use advance_candidates to move candidates forward, and reject_candidate to turn one "
+          + "down. BOTH require a human approval, so never tell anyone a candidate has been "
+          + "advanced or rejected before that approval is granted — say you have proposed it and it "
+          + "is awaiting review. Neither works on a candidate nobody has screened: there would be "
+          + "no evidence behind the decision. reject_candidate takes one candidate at a time on "
+          + "purpose, because a rejection is a judgement about a person and the decision they may "
+          + "challenge; give the reason in terms of the approved rubric. "
           + "Never predict how well a candidate would perform in the job: this system evidences and "
           + "cites, it does not forecast job performance. "
           + "Never draw an inference from a candidate's name, photograph, age, gender, nationality, "
@@ -72,6 +79,7 @@ public sealed class HiringModule : IModule
             "Parse the CV for APP-1001",
             "Screen applicant APP-1001 against the approved rubric",
             "Advance APP-1001 to the next stage",
+            "Reject APP-1002",
         ],
         Roles = ["hiring-sourcer", "hiring-recruiter", "hiring-talent-lead", "hiring-compliance"],
         Tools =
@@ -126,6 +134,15 @@ public sealed class HiringModule : IModule
             },
             new ToolDescriptor
             {
+                Name = "reject_candidate",
+                Description =
+                    "Reject one candidate, with a recorded reason. Requires human approval, and the "
+                  + "candidate must already have been screened.",
+                Permission = Permissions.ForTool(Id, "reject_candidate"),
+                RequiresApproval = true,
+            },
+            new ToolDescriptor
+            {
                 Name = "propose_rubric",
                 Description =
                     "Propose the evaluation criteria for a requisition, derived from its job description. "
@@ -145,6 +162,19 @@ public sealed class HiringModule : IModule
                 Route = "/hiring/chat",
                 Icon = "message-circle",
                 Order = 0,
+            },
+            new TabDescriptor
+            {
+                Id = "candidate",
+                Label = "Candidate",
+                Route = "/hiring/candidates/:applicantReference",
+                Icon = "user-search",
+                Order = 2,
+                Permission = ViewHiring,
+                // No DataEndpoint: this tab is CUSTOM REACT (ARCH.md §5, ADR-0011). The frontend
+                // registers against this tab ID — not the route — via defineModule("hiring",
+                // { tabs: { candidate: … } }), so renaming this Id silently unmounts the component
+                // with no error anywhere.
             },
             new TabDescriptor
             {
@@ -533,5 +563,61 @@ public sealed class HiringModule : IModule
             })
             .RequireAuthorization(PermissionRequirement.PolicyName(ViewHiring))
             .WithName("Hiring_ListRequisitions");
+
+        // Backs the custom-React Candidate tab: everything that tab needs in ONE payload — the
+        // applicant, the live screening, and the CV already split into highlight segments.
+        //
+        // The segmenting happens HERE rather than in the browser deliberately (CvHighlighting):
+        // the span arithmetic is the product's central guarantee, and it belongs where the test
+        // ladder can assert it. The frontend paints segments and decides nothing.
+        group.MapGet("/candidates/{reference}", async (
+                string reference, HiringDbContext db, CancellationToken ct) =>
+            {
+                var applicant = await db.Applicants
+                    .Include(a => a.Cv)
+                    .Include(a => a.Requisition)
+                    .FirstOrDefaultAsync(a => a.Reference == reference, ct);
+
+                if (applicant is null)
+                {
+                    return Results.NotFound(new { reference, error = "No such applicant." });
+                }
+
+                var screening = await db.ScreeningResults
+                    .Include(r => r.Scores)
+                    .Where(r => r.ApplicantId == applicant.Id && r.Status == ScreeningStatus.Proposed)
+                    .OrderByDescending(r => r.ScreenedAt)
+                    .FirstOrDefaultAsync(ct);
+
+                var scores = screening?.Scores.ToList() ?? [];
+                var cvText = applicant.Cv?.ExtractedText ?? string.Empty;
+
+                return Results.Ok(new
+                {
+                    reference = applicant.Reference,
+                    fullName = applicant.FullName,
+                    stage = applicant.Stage.ToString(),
+                    requisition = applicant.Requisition?.Reference,
+                    screening = screening is null ? null : new
+                    {
+                        rubricVersion = screening.RubricVersion,
+                        total = screening.TotalScore,
+                        max = screening.MaxScore,
+                        unresolved = screening.UnresolvedCount,
+                    },
+                    scores = scores.Select(s => new
+                    {
+                        criterion = s.CriterionName,
+                        points = s.Points,
+                        unresolved = s.Unresolved,
+                        citationText = s.CitationText,
+                        note = s.Note,
+                    }),
+                    cvSegments = CvHighlighting.Segment(cvText, scores)
+                        .Select(seg => new { text = seg.Text, criteria = seg.Criteria }),
+                });
+            })
+            .RequireAuthorization(PermissionRequirement.PolicyName(ViewHiring))
+            .WithName("Hiring_GetCandidate");
     }
 }

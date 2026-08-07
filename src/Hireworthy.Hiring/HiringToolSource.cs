@@ -77,6 +77,15 @@ public sealed class HiringToolSource : IModuleToolSource
             new ModuleTool
             {
                 ModuleId = ModuleId,
+                Name = "reject_candidate",
+                Permission = Permissions.ForTool(ModuleId, "reject_candidate"),
+                Function = AIFunctionFactory.Create(tools.RejectCandidateAsync, name: "reject_candidate"),
+                // The decision this product is ultimately judged on. Gated in BOTH places.
+                RequiresApproval = true,
+            },
+            new ModuleTool
+            {
+                ModuleId = ModuleId,
                 Name = "propose_rubric",
                 Permission = Permissions.ForTool(ModuleId, "propose_rubric"),
                 Function = AIFunctionFactory.Create(tools.ProposeRubricAsync, name: "propose_rubric"),

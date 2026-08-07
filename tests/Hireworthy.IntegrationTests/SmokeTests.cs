@@ -95,13 +95,14 @@ public sealed class SmokeTests(IntegrationFixture fixture)
         var tools = hiring.GetProperty("tools").EnumerateArray()
             .ToDictionary(t => t.GetProperty("permission").GetString()!, t => t);
 
-        Assert.Equal(7, tools.Count);
+        Assert.Equal(8, tools.Count);
         Assert.True(tools.ContainsKey("tools.hiring.list_requisitions"));
         Assert.True(tools.ContainsKey("tools.hiring.get_requisition"));
         Assert.True(tools.ContainsKey("tools.hiring.get_applicant"));
         Assert.True(tools.ContainsKey("tools.hiring.parse_cv"));
         Assert.True(tools.ContainsKey("tools.hiring.screen_applicant"));
         Assert.True(tools.ContainsKey("tools.hiring.advance_candidates"));
+        Assert.True(tools.ContainsKey("tools.hiring.reject_candidate"));
 
         // The gate, asserted where the platform reports it rather than where we declared it.
         Assert.True(tools["tools.hiring.propose_rubric"].GetProperty("requiresApproval").GetBoolean(),
@@ -118,6 +119,10 @@ public sealed class SmokeTests(IntegrationFixture fixture)
         // cannot be un-told, so this flag is the one that must never quietly become false.
         Assert.True(tools["tools.hiring.advance_candidates"].GetProperty("requiresApproval").GetBoolean(),
             "advance_candidates is not approval-gated. No candidate may be advanced without an accountable human.");
+
+        // The decision this product is ultimately judged on.
+        Assert.True(tools["tools.hiring.reject_candidate"].GetProperty("requiresApproval").GetBoolean(),
+            "reject_candidate is not approval-gated. An autonomous rejection is an adverse employment decision made by a machine.");
 
         // Everything the module does is audited: in this product the audit trail is a deliverable
         // a bias auditor asks for, not merely a safety net.
