@@ -19,3 +19,16 @@ appsettings.*.local.json
 # The vendored platform packages ARE committed on purpose (.packages/) -- they publish
 # only to a feed that needs a PAT, so vendoring is what keeps `dotnet restore` working
 # on a bare clone. Do not add .packages/ here.
+
+
+# Frontend build output and dependencies. NOTE the asymmetry with .packages/ above: the .NET
+# packages are vendored because they are NOT on nuget.org, but @plenipo/ui IS on public npm
+# (ADR-0011 / OQ9), so node_modules is restored, never committed.
+frontend/**/node_modules/
+frontend/**/dist/
+frontend/**/*.tsbuildinfo
+
+# One lockfile, not two. The AppHost runs the UI with .WithPnpm(), so pnpm-lock.yaml is the
+# resolution that actually ships; a package-lock.json from a stray `npm install` would be a
+# second source of truth that silently drifts from it.
+frontend/**/package-lock.json

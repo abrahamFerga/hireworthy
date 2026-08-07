@@ -1,0 +1,13 @@
+# This is a single package, not a monorepo. The file exists anyway because pnpm creates it
+# unprompted to ask which dependencies may run install scripts -- and once it exists, pnpm
+# refuses to install unless `packages` is declared. Both keys are set here so the file is
+# valid rather than a half-answered prompt.
+packages:
+  - .
+
+# An allowlist of exactly one package, not a blanket "run every postinstall". esbuild ships
+# prebuilt per-platform binaries and its install script links the right one for the machine;
+# vite cannot bundle without it. Everything else stays blocked, which is the point -- an
+# install script is arbitrary code execution at dependency-install time.
+allowBuilds:
+  esbuild: true

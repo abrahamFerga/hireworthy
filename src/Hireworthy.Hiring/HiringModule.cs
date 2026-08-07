@@ -148,6 +148,19 @@ public sealed class HiringModule : IModule
             },
             new TabDescriptor
             {
+                Id = "candidate",
+                Label = "Candidate",
+                Route = "/hiring/candidates/:applicantReference",
+                Icon = "user-search",
+                Order = 2,
+                Permission = ViewHiring,
+                // No DataEndpoint: this tab is CUSTOM REACT (ARCH.md §5, ADR-0011). The frontend
+                // registers against this tab ID — not the route — via defineModule("hiring",
+                // { tabs: { candidate: … } }), so renaming this Id silently unmounts the component
+                // with no error anywhere.
+            },
+            new TabDescriptor
+            {
                 Id = "requisitions",
                 Label = "Requisitions",
                 Route = "/hiring/requisitions",
@@ -533,5 +546,61 @@ public sealed class HiringModule : IModule
             })
             .RequireAuthorization(PermissionRequirement.PolicyName(ViewHiring))
             .WithName("Hiring_ListRequisitions");
+
+        // Backs the custom-React Candidate tab: everything that tab needs in ONE payload — the
+        // applicant, the live screening, and the CV already split into highlight segments.
+        //
+        // The segmenting happens HERE rather than in the browser deliberately (CvHighlighting):
+        // the span arithmetic is the product's central guarantee, and it belongs where the test
+        // ladder can assert it. The frontend paints segments and decides nothing.
+        group.MapGet("/candidates/{reference}", async (
+                string reference, HiringDbContext db, CancellationToken ct) =>
+            {
+                var applicant = await db.Applicants
+                    .Include(a => a.Cv)
+                    .Include(a => a.Requisition)
+                    .FirstOrDefaultAsync(a => a.Reference == reference, ct);
+
+                if (applicant is null)
+                {
+                    return Results.NotFound(new { reference, error = "No such applicant." });
+                }
+
+                var screening = await db.ScreeningResults
+                    .Include(r => r.Scores)
+                    .Where(r => r.ApplicantId == applicant.Id && r.Status == ScreeningStatus.Proposed)
+                    .OrderByDescending(r => r.ScreenedAt)
+                    .FirstOrDefaultAsync(ct);
+
+                var scores = screening?.Scores.ToList() ?? [];
+                var cvText = applicant.Cv?.ExtractedText ?? string.Empty;
+
+                return Results.Ok(new
+                {
+                    reference = applicant.Reference,
+                    fullName = applicant.FullName,
+                    stage = applicant.Stage.ToString(),
+                    requisition = applicant.Requisition?.Reference,
+                    screening = screening is null ? null : new
+                    {
+                        rubricVersion = screening.RubricVersion,
+                        total = screening.TotalScore,
+                        max = screening.MaxScore,
+                        unresolved = screening.UnresolvedCount,
+                    },
+                    scores = scores.Select(s => new
+                    {
+                        criterion = s.CriterionName,
+                        points = s.Points,
+                        unresolved = s.Unresolved,
+                        citationText = s.CitationText,
+                        note = s.Note,
+                    }),
+                    cvSegments = CvHighlighting.Segment(cvText, scores)
+                        .Select(seg => new { text = seg.Text, criteria = seg.Criteria }),
+                });
+            })
+            .RequireAuthorization(PermissionRequirement.PolicyName(ViewHiring))
+            .WithName("Hiring_GetCandidate");
     }
 }
