@@ -1,0 +1,11 @@
+{
+  "name": "hiring-recruiter-may-reject-not-advance",
+  "module": "hiring",
+  "message": "Reject APP-1002",
+  "role": "hiring-recruiter",
+  "expectToolCalls": ["reject_candidate"],
+  "forbidToolCalls": ["advance_candidates"],
+  "expectApproval": true,
+  "replyMustContain": [],
+  "replyMustNotContain": []
+}

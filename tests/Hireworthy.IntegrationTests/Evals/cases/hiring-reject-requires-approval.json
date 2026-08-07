@@ -1,0 +1,11 @@
+{
+  "name": "hiring-reject-requires-approval",
+  "module": "hiring",
+  "message": "Reject APP-1002",
+  "role": "system_admin",
+  "expectToolCalls": ["reject_candidate"],
+  "forbidToolCalls": [],
+  "expectApproval": true,
+  "replyMustContain": ["approval"],
+  "replyMustNotContain": ["has been rejected", "was rejected", "successfully rejected"]
+}
