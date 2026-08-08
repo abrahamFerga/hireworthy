@@ -149,6 +149,76 @@ public sealed class ScreeningTests(IntegrationFixture fixture)
     }
 
     [Fact]
+    public async Task A_partial_score_set_is_refused_and_nothing_is_written()
+    {
+        // Issue #44. Supplying only the criterion the CV evidences well used to shrink the
+        // yardstick: APP-1002 read 25/25 — "every criterion evidenced" — while four criteria were
+        // never looked at, outranking a genuinely stronger candidate scored honestly at 80/90.
+        // Omission must cost what an unresolved mark costs, so it is refused outright rather than
+        // scored as unresolved on the model's behalf: "the CV does not evidence this" is a
+        // judgement, and this product may not assert one nobody made.
+        var (scope, _, _) = await fixture.AuthorizedScopeAsync();
+        using var _s = scope;
+        var (tools, db, _) = await ArrangeAsync(fixture, scope);
+        var cv = await db.CvDocuments
+            .Where(c => c.Applicant!.Reference == "APP-1002")
+            .Select(c => c.ExtractedText)
+            .SingleAsync();
+
+        var before = await db.ScreeningResults.CountAsync(r => r.Applicant!.Reference == "APP-1002");
+
+        var result = await tools.ScreenApplicantAsync("APP-1002",
+        [
+            Grounded(cv, "Production Python experience", 5, "Python services for freight tracking"),
+        ]);
+
+        Assert.Contains("Missing:", result);
+        Assert.Contains("On-call ownership", result);
+        Assert.DoesNotContain("every criterion evidenced", result);
+
+        var after = await db.ScreeningResults.CountAsync(r => r.Applicant!.Reference == "APP-1002");
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
+    public async Task A_repeated_criterion_is_refused_and_nothing_is_written()
+    {
+        // Issue #45, and the case a completeness check alone does not see: every criterion IS
+        // covered, so nothing is "Missing:" — one of them is simply supplied twice. Left unchecked
+        // this is worse than the omission it sits next to, because the maximum now belongs to the
+        // rubric while the total is still summed per row: an honest 60/90 with the highest-weighted
+        // criterion repeated reads 85/90 (94.4%) and overtakes the honest 80/90 candidate from
+        // issue #44's own table. Nothing on the Candidate tab shows it — CvHighlighting.Segment
+        // de-duplicates the covering names, so the citation is not doubled on screen.
+        var (scope, _, _) = await fixture.AuthorizedScopeAsync();
+        using var _s = scope;
+        var (tools, db, _) = await ArrangeAsync(fixture, scope);
+        var cv = await db.CvDocuments
+            .Where(c => c.Applicant!.Reference == "APP-1002")
+            .Select(c => c.ExtractedText)
+            .SingleAsync();
+
+        var before = await db.ScreeningResults.CountAsync(r => r.Applicant!.Reference == "APP-1002");
+
+        var python = Grounded(cv, SeededRubric.PythonExperience, 5, "Python services for freight tracking");
+
+        var result = await tools.ScreenApplicantAsync("APP-1002",
+        [
+            python,
+            .. SeededRubric.UnresolvedExcept(SeededRubric.PythonExperience),
+            python,
+        ]);
+
+        Assert.Contains("Scored more than once:", result);
+        Assert.Contains(SeededRubric.PythonExperience, result);
+        Assert.DoesNotContain("Missing:", result);
+        Assert.DoesNotContain("every criterion evidenced", result);
+
+        var after = await db.ScreeningResults.CountAsync(r => r.Applicant!.Reference == "APP-1002");
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
     public async Task Re_screening_supersedes_rather_than_leaving_two_live_scores()
     {
         // Two live results would make "their score" ambiguous at exactly the moment somebody is
@@ -157,10 +227,12 @@ public sealed class ScreeningTests(IntegrationFixture fixture)
         using var _s = scope;
         var (tools, db, cv) = await ArrangeAsync(fixture, scope);
 
+        const string mentoring = "Mentored two juniors through their first on-call rotations.";
+
         await tools.ScreenApplicantAsync("APP-1001",
-            [Grounded(cv, "Mentoring", 3, "Mentored two juniors through their first on-call rotations.")]);
+            [Grounded(cv, "Mentoring", 3, mentoring), .. SeededRubric.UnresolvedExcept("Mentoring")]);
         await tools.ScreenApplicantAsync("APP-1001",
-            [Grounded(cv, "Mentoring", 5, "Mentored two juniors through their first on-call rotations.")]);
+            [Grounded(cv, "Mentoring", 5, mentoring), .. SeededRubric.UnresolvedExcept("Mentoring")]);
 
         var live = await db.ScreeningResults
             .Where(r => r.Applicant!.Reference == "APP-1001" && r.Status == ScreeningStatus.Proposed)

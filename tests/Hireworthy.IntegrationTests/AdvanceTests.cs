@@ -35,7 +35,8 @@ public sealed class AdvanceTests(IntegrationFixture fixture)
         var quote = cv[..Math.Min(40, cv.Length)];
         await tools.ScreenApplicantAsync(reference,
         [
-            new ScoredCriterion("Production Python experience", 4, quote, 0, quote.Length, false, null),
+            new ScoredCriterion(SeededRubric.PythonExperience, 4, quote, 0, quote.Length, false, null),
+            .. SeededRubric.UnresolvedExcept(SeededRubric.PythonExperience),
         ]);
     }
 
