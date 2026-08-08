@@ -140,7 +140,9 @@ public sealed class CandidateViewTests(IntegrationFixture fixture)
 
         // The score panel carries the quotation as a quotation. Selected by criterion rather than
         // by being the only row: a valid screening now covers the whole rubric (issue #44), so the
-        // other four criteria are present and unresolved. The assertion is unchanged.
+        // other four criteria are present and unresolved. The citation and unresolved assertions
+        // below are unchanged; the implicit "exactly one score row" that the bare Single() used to
+        // carry is NOT — that constraint now lives in ScreeningTests, which asserts Scores.Count.
         var score = body.GetProperty("scores").EnumerateArray()
             .Single(s => s.GetProperty("criterion").GetString() == SeededRubric.PythonExperience);
         Assert.Equal(quote, score.GetProperty("citationText").GetString());
