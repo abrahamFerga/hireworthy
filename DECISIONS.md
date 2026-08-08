@@ -276,3 +276,57 @@ Worth carrying forward, because it is counter-intuitive: **the two halves of the
 differently.** The .NET packages are not on nuget.org and must be vendored into `.packages/`; the
 npm package is public and must not be. Treating them the same — either by vendoring the tarball or
 by assuming the nupkgs are public — is the error this records against.
+
+---
+
+## ADR-0012 — The pipeline board's drop composes a move request; it never writes a stage
+
+**Status:** Accepted · 2026-08-07
+
+**Context.** ARCH.md §5 committed the `pipeline` tab to "Drag-and-drop across stage columns", and
+read literally that is a write: drop a card, the candidate moves. Building it that way needs a route
+that changes `Applicant.Stage`, and there are only two shapes for such a route. Both are wrong here,
+and the second is wrong in a way that is not visible from inside this repo.
+
+A **direct stage write** bypasses the approval gate outright. `advance_candidates` and
+`reject_candidate` are approval-gated because a human must accept a stage change before it happens;
+a board endpoint that writes the same column is that gate with a different URL.
+
+**Queueing a `PendingApproval` for `advance_candidates` from the drop** looks like the careful
+alternative and is a privilege escalation. Read from the platform checkout at the vendored pin
+(`0.1.0-alpha.28`; `ApprovalExecutor.cs` last changed at `4a203c7`, 2026-07-13, before the tag):
+
+- `Plenipo.Infrastructure/Agents/AuthorizedAgentRunner.cs:277-284` is the **only** per-tool
+  permission gate — it filters `candidateTools` on `currentUser.HasPermission(tool.Permission)`
+  before the model is offered anything.
+- `Plenipo.Infrastructure/Approvals/ApprovalExecutor.cs:24-37` resolves the tool by module + name
+  and calls `tool.Function.InvokeAsync`. **It does not re-check the tool's permission.**
+- `Plenipo.AspNetCore/Endpoints/ApprovalEndpoints.cs:82` gates approve on `Permissions.ManageApprovals`
+  alone.
+
+So the tool permission is enforced at the point a request is *created*, never at the point it is
+*executed*. `hiring-recruiter` holds `ManageApprovals` (`Program.cs:66`) and deliberately **not**
+`tools.hiring.advance_candidates` (`Program.cs:64-65`, per SPEC.md §3: "a recruiter MAY reject and
+schedule; advancing is the hiring manager's call"). A board route that created the pending approval
+would remove the only barrier standing between that role and the one decision the role model
+withholds from it.
+
+**Decision.** The drop **proposes**. `GET /api/hiring/pipeline` is the tab's only endpoint, the board
+exposes no route that changes a stage, and a drop composes the `advance_candidates` request the user
+then sends through chat — where the runner's permission filter applies normally. A user without the
+permission gets no tool, which is the correct and visible outcome.
+
+`PipelineTests.The_board_offers_no_route_that_moves_a_candidate_between_stages` pins this by probing
+seven write shapes against the pipeline path and asserting the candidate did not move.
+
+**Consequences.** The interaction is one step longer than the ARCH.md sentence implied, and that
+sentence is amended to match. **If a later change adds a stage-writing route to this tab, that guard
+test must be deleted first — and deleting it will read as tidying a test that blocks a documented
+feature.** It is not: it is the load-bearing check for this ADR. `pr-gates.mjs` cannot catch the
+regression, because its `CONTENT_RULES` scan removed lines for
+`RequiresApproval|Permissions\.|AddPlenipoRole|HasQueryFilter` and a new `MapPut` matches none of
+them. This ADR is the only durable record, which is why it exists.
+
+The underlying platform behaviour — approve re-invoking a tool without re-checking its permission —
+is not fixed by this decision and is not this product's to fix. It is filed separately; this ADR
+only declines to build on top of it.

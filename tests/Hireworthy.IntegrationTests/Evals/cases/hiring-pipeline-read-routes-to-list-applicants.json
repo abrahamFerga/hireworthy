@@ -1,0 +1,11 @@
+{
+  "name": "hiring-pipeline-read-routes-to-list-applicants",
+  "module": "hiring",
+  "message": "List the applicants on REQ-142",
+  "role": "system_admin",
+  "expectToolCalls": ["list_applicants"],
+  "forbidToolCalls": ["advance_candidates", "reject_candidate"],
+  "expectApproval": false,
+  "replyMustContain": [],
+  "replyMustNotContain": []
+}
