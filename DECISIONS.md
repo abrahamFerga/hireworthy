@@ -306,7 +306,20 @@ as its first statement, via `RequirePermissionToWrite(toolName)`. `ICurrentUser`
 approve request's scope, so inside `ApprovalExecutor` it is the *approver* — the identity the
 platform never checked.
 
-Deliberately **two explicit call sites**, not a wrapper, not an endpoint filter, and not a change to
+The guard is proven in **both directions**, because a refusal-only proof cannot distinguish "refuses
+the wrong approver" from "refuses everyone" — and the second would mean no candidate could ever be
+advanced again, with every check still green. `AdvanceTests` therefore also approves as
+`hiring-talent-lead`, who holds `tools.hiring.*` and never the literal permission the guard builds,
+and asserts the applicant really moves `Applied → Screening` with a `Decision` row. That settles at
+runtime something asserted nowhere in this repo before: `PermissionMatcher` walks the dotted
+hierarchy, so a prefix grant satisfies the guard.
+
+That is **all three** approval-gated tools — `advance_candidates`, `reject_candidate` and
+`propose_rubric`. The last was added in review: it is `RequiresApproval` and was unguarded, and
+under ADR-0003 the rubric is the instrument every applicant is measured against, so a
+tenant granting `ManageApprovals` without `propose_rubric` reopened #51 against the rubric itself.
+
+Deliberately **explicit call sites**, not a wrapper, not an endpoint filter, and not a change to
 the role grants:
 
 - Generalising it into an `IModuleToolSource` decorator would make it look like a feature. Shims
@@ -319,8 +332,13 @@ the role grants:
 **Consequences.** It is **defence in depth, not a fix**, and the difference matters in two ways
 worth writing down rather than discovering later:
 
-1. It covers only the tools annotated. Every future gated tool must remember to call it — which is
-   precisely the argument for the check living in the platform, and why plenipo#145 was filed.
+1. It covers only the tools annotated — but *forgetting* one is now a failing test rather than a
+   silent hole. `ManifestGuardTests.Every_approval_gated_tool_re_checks_the_callers_permission`
+   invokes every `RequiresApproval` tool with a stub that grants nothing and requires
+   `UnauthorizedAccessException` naming that tool's own permission, so a new gated tool without the
+   call fails the build. That is an L1 check standing in for a discipline nobody can be relied on to
+   remember; it does not make the shim correct, and the check belonging in the platform is still the
+   argument, which is why plenipo#145 stays open.
 2. It refuses *inside the tool*, so the approve endpoint answers **422** ("approved, but the tool
    threw") for what is really **403** ("you may not approve this"). The audit record therefore reads
    as a failed execution rather than a denied authorization. `AdvanceTests` asserts the 422
