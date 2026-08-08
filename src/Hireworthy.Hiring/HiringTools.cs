@@ -53,7 +53,8 @@ public sealed class HiringTools(HiringDbContext db, ITenantContext tenantContext
     /// here.
     /// </summary>
     /// <remarks>
-    /// TODO(plenipo#145): delete this, its two call sites and the <c>ICurrentUser</c> dependency
+    /// TODO(plenipo#145): delete this, its three call sites — <c>propose_rubric</c>,
+    /// <c>advance_candidates</c>, <c>reject_candidate</c> — and the <c>ICurrentUser</c> dependency
     /// once the platform re-checks a tool's own permission against the approver.
     /// <para>
     /// The platform gates a tool's permission exactly once — in <c>AuthorizedAgentRunner</c>, which
@@ -65,12 +66,12 @@ public sealed class HiringTools(HiringDbContext db, ITenantContext tenantContext
     /// lead's parked call. Product issue #51; platform request plenipo#145.
     /// </para>
     /// <para>
-    /// <b>Defence in depth, not the fix.</b> It covers only the two tools annotated below, so every
-    /// gated tool this module gains must remember to call it — which is the argument for the check
-    /// living in the platform. It also refuses at the tool, so the approve endpoint answers 422
-    /// ("approved, but the tool threw") where a real gate would answer 403. Deliberately left as
-    /// two explicit call sites rather than generalised into a wrapper: a shim that looks like a
-    /// feature gets adopted and outlives its reason.
+    /// <b>Defence in depth, not the fix.</b> It covers only the three tools annotated below, so
+    /// every gated tool this module gains must remember to call it — which is the argument for the
+    /// check living in the platform. It also refuses at the tool, so the approve endpoint answers
+    /// 422 ("approved, but the tool threw") where a real gate would answer 403. Deliberately left
+    /// as three explicit call sites rather than generalised into a wrapper: a shim that looks like
+    /// a feature gets adopted and outlives its reason.
     /// </para>
     /// <para>
     /// Safe on the normal path by construction — the runner has already filtered on this exact
