@@ -185,6 +185,15 @@ public sealed class HiringTools(HiringDbContext db, ITenantContext tenantContext
         [Description("Why these criteria follow from the job description. Recorded with the approval.")] string rationale,
         CancellationToken cancellationToken = default)
     {
+        // TODO(plenipo#145) — first statement, before validation, for the same reason as the two
+        // decision tools: a caller who may not propose a rubric learns nothing about the
+        // requisition from the shape of the error. See RequirePermissionToWrite.
+        //
+        // This one is not hypothetical hardening. Under ADR-0003 the rubric is the instrument every
+        // applicant is measured against, and it is approval-gated — so a tenant that grants
+        // ManageApprovals without propose_rubric reopens #51 against the rubric itself.
+        RequirePermissionToWrite("propose_rubric");
+
         if (criteria is null || criteria.Length == 0)
         {
             throw new ArgumentException(

@@ -1,6 +1,7 @@
 using Hireworthy.Hiring;
 using Hireworthy.Hiring.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Plenipo.Application.Authorization;
 using Plenipo.Core.Identity;
@@ -134,6 +135,69 @@ public sealed class ManifestGuardTests
 
             Assert.True(descriptor.RequiresApproval, $"Manifest descriptor for '{name}' is not approval-gated.");
             Assert.True(tool.RequiresApproval, $"ModuleTool for '{name}' is not approval-gated.");
+        }
+    }
+
+    [Fact]
+    public async Task Every_approval_gated_tool_re_checks_the_callers_permission()
+    {
+        // TODO(plenipo#145) — delete alongside the shim, once the platform gates the approve path.
+        //
+        // #51: the platform enforces a tool's permission exactly once, on the PROPOSE path.
+        // ApprovalExecutor re-invokes the tool without ever reading tool.Permission, so anyone
+        // holding ManageApprovals can execute any gated tool by approving someone else's parked
+        // call. The shim is RequirePermissionToWrite as the first statement of each gated tool.
+        //
+        // Without this test that shim is a documented hope: "every future gated tool must remember
+        // to call it". propose_rubric had already forgotten — it is RequiresApproval and was
+        // unguarded, which under ADR-0003 means a tenant granting ManageApprovals without
+        // propose_rubric could rewrite the instrument every applicant is measured against.
+        //
+        // GrantsNothingCurrentUser grants nothing, so a guarded tool refuses on its FIRST statement
+        // and never touches the DbContext — which is why this needs no Postgres despite invoking
+        // real tools. An unguarded tool falls through to validation or the context and throws
+        // something else; when propose_rubric was unguarded this test caught it as an
+        // ObjectDisposedException, because BuildToolSourceTools disposes the scope it resolved
+        // them from. Any exception that is not UnauthorizedAccessException means the tool got past
+        // the re-check, which is the thing being asserted — not the particular type it failed with.
+        var executable = BuildToolSourceTools();
+
+        // The union of every gated tool's parameters. AIFunctionFactory ignores the ones a given
+        // tool does not declare, so one bag serves all three and adding a tool needs no new entry
+        // unless it introduces a new parameter name.
+        var arguments = new AIFunctionArguments
+        {
+            ["reference"] = "REQ-142",
+            ["references"] = new[] { "APP-1001" },
+            ["criteria"] = new[] { new ProposedCriterion("Production Python experience", "Shipped Python in production", 3) },
+            ["rationale"] = "Derived from the job description.",
+            ["reason"] = "Recorded with the decision.",
+        };
+
+        var gated = Module.Manifest.Tools.Where(t => t.RequiresApproval).ToList();
+        Assert.NotEmpty(gated);
+
+        foreach (var descriptor in gated)
+        {
+            var tool = executable.Single(t => t.Name == descriptor.Name);
+
+            var ex = await Record.ExceptionAsync(() => tool.Function.InvokeAsync(arguments).AsTask());
+
+            Assert.True(ex is not null,
+                $"Approval-gated tool '{descriptor.Name}' ran to completion for a caller holding NO "
+              + "permissions at all. It does not call RequirePermissionToWrite, so anyone with "
+              + "ManageApprovals can execute it by approving someone else's parked call (#51).");
+
+            var unauthorized = ex as UnauthorizedAccessException ?? ex!.InnerException as UnauthorizedAccessException;
+
+            Assert.True(unauthorized is not null,
+                $"Approval-gated tool '{descriptor.Name}' threw {ex!.GetType().Name} rather than "
+              + $"UnauthorizedAccessException for a caller holding no permissions, so it got PAST "
+              + $"the permission re-check and failed on something else. Add "
+              + $"RequirePermissionToWrite(\"{descriptor.Name}\") as its first statement. "
+              + $"Message was: {ex.Message}");
+
+            Assert.Contains(descriptor.Permission, unauthorized!.Message, StringComparison.Ordinal);
         }
     }
 
