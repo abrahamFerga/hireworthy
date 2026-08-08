@@ -174,7 +174,19 @@ public sealed class ManifestGuardTests
             ["reason"] = "Recorded with the decision.",
         };
 
-        var gated = Module.Manifest.Tools.Where(t => t.RequiresApproval).ToList();
+        // The UNION of both sets, not the manifest descriptors alone. The runner unions the two
+        // RequiresApproval flags (HiringToolSource says so in its own comment), so a tool marked
+        // gated on the ModuleTool but NOT on the manifest descriptor is approval-gated at runtime
+        // and reachable through ApprovalExecutor — the exact path #51 is about — while being
+        // invisible to a descriptors-only enumeration. Reading only one set here would make this
+        // test's whole claim ("forgetting one is now a failing test") true for the manifest-first
+        // path and false for the tool-source-first one.
+        var gated = Module.Manifest.Tools.Where(t => t.RequiresApproval)
+            .Select(t => (t.Name, t.Permission))
+            .Concat(executable.Where(t => t.RequiresApproval).Select(t => (t.Name, t.Permission)))
+            .Distinct()
+            .ToList();
+
         Assert.NotEmpty(gated);
 
         foreach (var descriptor in gated)
