@@ -1,7 +1,11 @@
+using System.Net;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Hireworthy.Hiring;
 using Hireworthy.Hiring.Persistence;
+using Plenipo.Application.Approvals;
+using Plenipo.Core.Platform;
 using Xunit;
 
 namespace Hireworthy.IntegrationTests;
@@ -239,5 +243,76 @@ public sealed class AdvanceTests(IntegrationFixture fixture)
 
         Assert.False(turn.Failed, $"RUN_ERROR: {turn.Error}");
         Assert.DoesNotContain("advance_candidates", turn.ToolCalls);
+    }
+
+    [Fact]
+    public async Task A_recruiter_cannot_approve_the_advance_they_are_forbidden_to_propose()
+    {
+        // The sibling above proves the PROPOSE path is closed: the runner never puts
+        // advance_candidates in a recruiter's tool list. This proves the OTHER path to the same
+        // write, and it is a different gate — approving is authorized on
+        // Permissions.ManageApprovals ALONE (ApprovalEndpoints), and ApprovalExecutor re-invokes
+        // the tool without ever reading tool.Permission. So a recruiter who may not advance
+        // anyone can advance them by approving someone else's parked call.
+        //
+        // Issue #51. The platform request is plenipo#145; the guard this asserts is a shim.
+        //
+        // The pending approval is RECORDED DIRECTLY rather than driven through a model turn. The
+        // defect is "an approved call re-executes without re-checking the approver", which needs
+        // no model to reproduce — and a Mock-provider turn would make the reproduction depend on
+        // what the mock chose to call rather than on the gate under test.
+        var (scope, tenantId, userId) = await fixture.AuthorizedScopeAsync();
+        using var _s = scope;
+        var (tools, db) = await ArrangeAsync(scope);
+
+        // Its own applicant, for the same reason as the helper above: this asserts a candidate was
+        // NOT moved, and a sibling test advances APP-1001.
+        var reference = await NewUnscreenedApplicantAsync(db, tenantId, "APPROVE51");
+        await ScreenAsync(tools, db, reference);
+
+        var approvals = scope.ServiceProvider.GetRequiredService<IApprovalStore>();
+        var approvalId = Guid.NewGuid();
+        await approvals.RecordPendingAsync(new PendingApproval
+        {
+            Id = approvalId,
+            TenantId = tenantId,
+            UserId = userId,
+            UserDisplay = "the talent lead, who may make this call",
+            // No FK on this column (PendingApprovalConfiguration indexes it and nothing more), so a
+            // synthetic conversation keeps the arrangement to the one thing being tested.
+            ConversationId = Guid.NewGuid(),
+            ModuleId = HiringModule.Id,
+            ToolName = "advance_candidates",
+            ArgumentsJson = JsonSerializer.Serialize(new
+            {
+                references = new[] { reference },
+                reason = "Approved by someone whose tier is denied this decision",
+            }),
+        });
+
+        // The recruiter holds Permissions.ManageApprovals and NOT
+        // tools.hiring.advance_candidates — the exact asymmetry SPEC.md §3 describes.
+        using var recruiter = fixture.AdminClient(roles: "hiring-recruiter", subject: "it-recruiter-51");
+        var response = await recruiter.PostAsync($"/api/chat/approvals/{approvalId}/approve", content: null);
+        var body = await response.Content.ReadAsStringAsync();
+
+        db.ChangeTracker.Clear();
+        var applicant = await db.Applicants.SingleAsync(a => a.Reference == reference);
+
+        // The consequence, asserted before the status code: a real person's stage is the thing that
+        // must not have moved. A refusal that still advanced them would be a passing test and a
+        // shipped defect.
+        Assert.Equal(ApplicantStage.Applied, applicant.Stage);
+        Assert.Empty(await db.Decisions.Where(d => d.Applicant!.Reference == reference).ToListAsync());
+        Assert.False(response.IsSuccessStatusCode,
+            $"The approve succeeded, so a recruiter just made a decision their tier is denied. Body: {body}");
+
+        // 422, not 403, and the difference is the whole reason plenipo#145 exists: the shim refuses
+        // inside the tool, so the platform records "approved, but the tool threw" for what is
+        // actually "this person may not approve this". Asserted rather than described, so the day
+        // the platform gates it properly this test fails and is rewritten deliberately.
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Contains("advance_candidates", body, StringComparison.Ordinal);
+        Assert.Contains("Nothing was written", body, StringComparison.Ordinal);
     }
 }

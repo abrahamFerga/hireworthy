@@ -3,6 +3,7 @@ using Hireworthy.Hiring.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Plenipo.Application.Authorization;
+using Plenipo.Core.Identity;
 using Plenipo.Core.Multitenancy;
 using Plenipo.Modules.Sdk;
 using Xunit;
@@ -26,6 +27,22 @@ public sealed class ManifestGuardTests
         public Guid? TenantId => Tenant;
         public bool HasTenant => true;
         public Guid RequireTenantId() => Tenant;
+    }
+
+    /// <summary>
+    /// Grants nothing, on purpose. This file inspects tool DECLARATIONS and never invokes one, so
+    /// a stub that answered "yes" to every permission would quietly start passing the day one of
+    /// these tests did call a tool. TODO(plenipo#145) — delete alongside the shim it exists for.
+    /// </summary>
+    private sealed class GrantsNothingCurrentUser : ICurrentUser
+    {
+        public Guid? UserId => null;
+        public string? Subject => null;
+        public string? DisplayName => null;
+        public Guid? TenantId => null;
+        public bool IsAuthenticated => false;
+        public IReadOnlySet<string> Permissions => new HashSet<string>(StringComparer.Ordinal);
+        public bool HasPermission(string permission) => false;
     }
 
     [Fact]
@@ -181,6 +198,7 @@ public sealed class ManifestGuardTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext, FixedTenantContext>();
+        services.AddSingleton<ICurrentUser, GrantsNothingCurrentUser>();
         services.AddDbContext<HiringDbContext>(o => o.UseNpgsql("Host=localhost;Database=guard"));
         services.AddScoped<HiringTools>();
 

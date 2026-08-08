@@ -276,3 +276,54 @@ Worth carrying forward, because it is counter-intuitive: **the two halves of the
 differently.** The .NET packages are not on nuget.org and must be vendored into `.packages/`; the
 npm package is public and must not be. Treating them the same — either by vendoring the tarball or
 by assuming the nupkgs are public — is the error this records against.
+
+---
+
+## ADR-0014 — Approval-gated write tools re-check the caller's permission themselves, until the platform does
+
+**Status:** Accepted · 2026-08-08 · **temporary — delete on `TODO(plenipo#145)`**
+
+**Numbered 0014, not 0012.** The unmerged #42 takes ADR-0012 and the unmerged #54 takes ADR-0013.
+A gap in the sequence is cheaper than a collision on merge.
+
+**Context.** The platform enforces a tool's permission **exactly once**: `AuthorizedAgentRunner`
+filters the tool list on `currentUser.HasPermission(tool.Permission)` before the model sees a
+schema. Nothing re-checks it on the *execute* path. `ApprovalExecutor.ExecuteAsync` resolves the
+`ModuleTool` — with `tool.Permission` in hand — and calls `tool.Function.InvokeAsync` without
+reading it, and `ApprovalEndpoints` authorizes `POST /api/chat/approvals/{id}/approve` on
+`Permissions.ManageApprovals` **alone**. Read at the vendored tag `v0.1.0-alpha.28`, and unchanged
+at the platform's current HEAD.
+
+Hireworthy's role model is exactly the shape that breaks on this. SPEC.md §3 gives
+`hiring-recruiter` `reject_candidate` but withholds `advance_candidates` — *"advancing is the hiring
+manager's call"* — while also granting `ManageApprovals` so they can work the queue. Those two
+grants were incompatible: a recruiter who cannot see `advance_candidates` in their tool list at all
+could perform it by approving a talent lead's parked call. Issue #51, and **proven at runtime**, not
+argued from source: the reproduction moved a real applicant `Applied → Screening`.
+
+**Decision.** Every approval-gated write tool in `HiringTools` re-checks the **caller's** permission
+as its first statement, via `RequirePermissionToWrite(toolName)`. `ICurrentUser` resolves from the
+approve request's scope, so inside `ApprovalExecutor` it is the *approver* — the identity the
+platform never checked.
+
+Deliberately **two explicit call sites**, not a wrapper, not an endpoint filter, and not a change to
+the role grants:
+
+- Generalising it into an `IModuleToolSource` decorator would make it look like a feature. Shims
+  that look like features outlive their reason, and this one should die.
+- Dropping `ManageApprovals` from `hiring-recruiter` would also close the hole, and was rejected:
+  it takes the approval queue away from the role that uses it most, and recruiters must still
+  approve `reject_candidate` and `propose_rubric`, which their tier *does* permit. The seam can only
+  say "all of the queue or none of it"; the thing being separated is per-tool.
+
+**Consequences.** It is **defence in depth, not a fix**, and the difference matters in two ways
+worth writing down rather than discovering later:
+
+1. It covers only the tools annotated. Every future gated tool must remember to call it — which is
+   precisely the argument for the check living in the platform, and why plenipo#145 was filed.
+2. It refuses *inside the tool*, so the approve endpoint answers **422** ("approved, but the tool
+   threw") for what is really **403** ("you may not approve this"). The audit record therefore reads
+   as a failed execution rather than a denied authorization. `AdvanceTests` asserts the 422
+   explicitly, so when the platform gates it properly that test fails and is rewritten on purpose.
+
+Nothing here weakens an invariant: it enforces RBAC on a path where it currently is not enforced.
