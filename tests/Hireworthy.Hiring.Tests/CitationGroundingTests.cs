@@ -198,4 +198,34 @@ public sealed class ScreeningTotalTests
         Assert.Equal(30, max);
         Assert.Equal(0, unresolved);
     }
+
+    [Fact]
+    public void A_duplicated_criterion_is_counted_once_and_cannot_outrun_the_maximum()
+    {
+        // Issue #45, and the defect the fix for #44 made strictly worse. Once the maximum belongs
+        // to the rubric while the total is still summed per row, a criterion supplied twice adds to
+        // the total and not to the maximum — so `total <= max`, which held unconditionally before,
+        // became breakable: this input read 50/30 (167%). A repeat does not merely inflate a total,
+        // it re-weights the rubric for one applicant, which is a direct lever on rank.
+        var (total, max, _) = ScreeningResult.ComputeTotal(
+            [Score(A, 5), Score(A, 5)],
+            new Dictionary<Guid, int> { [A] = 5, [B] = 1 });
+
+        Assert.Equal(25, total);
+        Assert.Equal(30, max);
+        Assert.True(total <= max, $"the total must never exceed the maximum; got {total}/{max}");
+    }
+
+    [Fact]
+    public void A_duplicated_off_rubric_criterion_does_not_inflate_the_maximum_either()
+    {
+        // The off-rubric branch is the one place the supplied set still moves `max`, so it is the
+        // one place a repeat could inflate the yardstick rather than the score. Counted once.
+        var (total, max, _) = ScreeningResult.ComputeTotal(
+            [Score(B, 4), Score(B, 4)],
+            new Dictionary<Guid, int> { [A] = 5 });
+
+        Assert.Equal(4, total);
+        Assert.Equal(30, max);
+    }
 }

@@ -471,6 +471,27 @@ public sealed class HiringTools(HiringDbContext db, ITenantContext tenantContext
                  + $"Missing: {string.Join(", ", missing)}.";
         }
 
+        // Covering every criterion is not the same as covering each one ONCE. The check above is a
+        // set cover: it proves nothing about repeats, and a repeat is the same defect from the other
+        // side — it does not shrink the maximum, it inflates the total against it, which re-weights
+        // the rubric for one applicant and moves them up the ranking (issue #45). Refused by name
+        // rather than de-duplicated here, for the reason the omission is refused rather than
+        // back-filled: two different scores for one criterion are two different judgements, and
+        // picking the winner is a judgement nobody made (ADR-0013). `criteriaByName` is
+        // OrdinalIgnoreCase, so "Mentoring" and "mentoring" are caught as the same criterion.
+        var duplicated = rows
+            .GroupBy(r => r.RubricCriterionId)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.First().CriterionName)
+            .ToList();
+
+        if (duplicated.Count > 0)
+        {
+            return $"Every criterion on approved rubric v{rubric.Version} must be scored exactly "
+                 + "once; a criterion scored twice is counted twice and re-weights the rubric for "
+                 + $"this one applicant. Scored more than once: {string.Join(", ", duplicated)}.";
+        }
+
         var weights = rubric.Criteria.ToDictionary(c => c.Id, c => c.Weight);
         var (total, max, unresolved) = ScreeningResult.ComputeTotal(rows, weights);
 

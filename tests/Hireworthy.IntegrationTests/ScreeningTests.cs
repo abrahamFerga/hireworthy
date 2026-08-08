@@ -181,6 +181,44 @@ public sealed class ScreeningTests(IntegrationFixture fixture)
     }
 
     [Fact]
+    public async Task A_repeated_criterion_is_refused_and_nothing_is_written()
+    {
+        // Issue #45, and the case a completeness check alone does not see: every criterion IS
+        // covered, so nothing is "Missing:" — one of them is simply supplied twice. Left unchecked
+        // this is worse than the omission it sits next to, because the maximum now belongs to the
+        // rubric while the total is still summed per row: an honest 60/90 with the highest-weighted
+        // criterion repeated reads 85/90 (94.4%) and overtakes the honest 80/90 candidate from
+        // issue #44's own table. Nothing on the Candidate tab shows it — CvHighlighting.Segment
+        // de-duplicates the covering names, so the citation is not doubled on screen.
+        var (scope, _, _) = await fixture.AuthorizedScopeAsync();
+        using var _s = scope;
+        var (tools, db, _) = await ArrangeAsync(fixture, scope);
+        var cv = await db.CvDocuments
+            .Where(c => c.Applicant!.Reference == "APP-1002")
+            .Select(c => c.ExtractedText)
+            .SingleAsync();
+
+        var before = await db.ScreeningResults.CountAsync(r => r.Applicant!.Reference == "APP-1002");
+
+        var python = Grounded(cv, SeededRubric.PythonExperience, 5, "Python services for freight tracking");
+
+        var result = await tools.ScreenApplicantAsync("APP-1002",
+        [
+            python,
+            .. SeededRubric.UnresolvedExcept(SeededRubric.PythonExperience),
+            python,
+        ]);
+
+        Assert.Contains("Scored more than once:", result);
+        Assert.Contains(SeededRubric.PythonExperience, result);
+        Assert.DoesNotContain("Missing:", result);
+        Assert.DoesNotContain("every criterion evidenced", result);
+
+        var after = await db.ScreeningResults.CountAsync(r => r.Applicant!.Reference == "APP-1002");
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
     public async Task Re_screening_supersedes_rather_than_leaving_two_live_scores()
     {
         // Two live results would make "their score" ambiguous at exactly the moment somebody is
