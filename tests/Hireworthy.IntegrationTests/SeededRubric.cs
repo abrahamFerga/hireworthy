@@ -16,7 +16,7 @@ namespace Hireworthy.IntegrationTests;
 /// <see cref="UnresolvedExcept"/> marks the remainder unresolved, which is what is actually true of
 /// the throwaway CVs those tests seed: a two-line CV genuinely does not evidence mentoring or ledger
 /// work. Nothing here relaxes an assertion — every assertion still lives in the calling test, and an
-/// unresolved criterion costs the candidate its points exactly as ADR-0004 intends.
+/// unresolved criterion costs the candidate its points exactly as ADR-0013 intends.
 /// </para>
 /// </remarks>
 public static class SeededRubric

@@ -188,8 +188,9 @@ public sealed class ScreeningTotalTests
     public void A_partial_score_set_is_still_measured_against_the_whole_rubric()
     {
         // Issue #44. Scoring only the criterion the CV happens to evidence must not shrink the
-        // yardstick — that is ADR-0004's "quietly reward a vague CV", reached by omission instead
-        // of by marking unresolved. The maximum belongs to the rubric, not to the supplied set.
+        // yardstick: omitting a criterion buys the same relief as marking it unresolved, without
+        // anyone making that judgement (ADR-0013). The maximum belongs to the rubric, not the
+        // supplied set.
         var (total, max, unresolved) = ScreeningResult.ComputeTotal(
             [Score(A, 5)],
             new Dictionary<Guid, int> { [A] = 5, [B] = 1 });
