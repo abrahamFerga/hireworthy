@@ -315,4 +315,73 @@ public sealed class AdvanceTests(IntegrationFixture fixture)
         Assert.Contains("advance_candidates", body, StringComparison.Ordinal);
         Assert.Contains("Nothing was written", body, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task A_talent_lead_can_approve_the_advance_their_tier_is_granted()
+    {
+        // The POSITIVE CONTROL for the guard the sibling above proves. Without this test the suite
+        // observes RequirePermissionToWrite returning false exactly once and never returning true,
+        // so "the guard refuses a recruiter" and "the guard refuses EVERY approver on this path"
+        // are indistinguishable — and the second one breaks the product's primary workflow with
+        // every check still green.
+        //
+        // It has to be hiring-talent-lead specifically, and NOT system_admin or
+        // AuthorizedScopeAsync's client: both hold "*", which PermissionMatcher short-circuits
+        // before it ever walks the dotted hierarchy, so either would re-test the wildcard the rest
+        // of this suite already leans on and prove nothing about this guard.
+        //
+        // What it actually settles, and could not be settled by reading: hiring-talent-lead is
+        // granted "tools.hiring.*" in Program.cs and NEVER the literal
+        // "tools.hiring.advance_candidates" that RequirePermissionToWrite builds. Whether
+        // ICurrentUser.HasPermission expands a prefix wildcard was asserted nowhere in this repo.
+        // If it does not, this test fails and the shim is refusing everyone.
+        var (scope, tenantId, userId) = await fixture.AuthorizedScopeAsync();
+        using var _s = scope;
+        var (tools, db) = await ArrangeAsync(scope);
+
+        // Its own applicant: this one is asserted to have MOVED, so sharing a reference with a
+        // test that asserts nobody moved would make both depend on xUnit's ordering.
+        var reference = await NewUnscreenedApplicantAsync(db, tenantId, "ALLOW51");
+        await ScreenAsync(tools, db, reference);
+
+        var approvals = scope.ServiceProvider.GetRequiredService<IApprovalStore>();
+        var approvalId = Guid.NewGuid();
+        await approvals.RecordPendingAsync(new PendingApproval
+        {
+            Id = approvalId,
+            TenantId = tenantId,
+            UserId = userId,
+            UserDisplay = "the talent lead, who may make this call",
+            ConversationId = Guid.NewGuid(),
+            ModuleId = HiringModule.Id,
+            ToolName = "advance_candidates",
+            ArgumentsJson = JsonSerializer.Serialize(new
+            {
+                references = new[] { reference },
+                reason = "Strong evidence against every criterion in the approved rubric",
+            }),
+        });
+
+        using var lead = fixture.AdminClient(roles: "hiring-talent-lead", subject: "it-talent-lead-51");
+        var response = await lead.PostAsync($"/api/chat/approvals/{approvalId}/approve", content: null);
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.True(response.IsSuccessStatusCode,
+            $"A talent lead holding tools.hiring.* could not approve advance_candidates, so the "
+          + $"#51 shim is refusing legitimate approvers and no candidate can be advanced at all. "
+          + $"Status {(int)response.StatusCode}. Body: {body}");
+
+        db.ChangeTracker.Clear();
+
+        // The consequence, asserted as a real person actually moving rather than as a 200. A
+        // success status with no stage change would be the approval lane become ceremony.
+        var applicant = await db.Applicants.SingleAsync(a => a.Reference == reference);
+        Assert.Equal(ApplicantStage.Screening, applicant.Stage);
+
+        var decision = Assert.Single(
+            await db.Decisions.Where(d => d.Applicant!.Reference == reference).ToListAsync());
+        Assert.Equal(DecisionKind.Advance, decision.Kind);
+        Assert.Equal(ApplicantStage.Applied, decision.FromStage);
+        Assert.Equal(ApplicantStage.Screening, decision.ToStage);
+    }
 }
