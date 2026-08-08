@@ -108,8 +108,13 @@ export function CandidateTab({ tab }: ModuleTabProps) {
         <section>
           <h2 className="text-sm font-medium mb-2 opacity-70">Scores</h2>
           <ul className="space-y-3">
-            {data.scores.map((s) => (
-              <li key={s.criterion} className="rounded border p-3 text-sm">
+            {/* Keyed on position as well as name. The server now refuses a score set that repeats
+                a criterion (ADR-0013), so new rows cannot collide — but rows written before that
+                check can, and #53 tracks repairing them. A duplicate key made React drop or
+                duplicate rendered rows, so the screen could disagree with the stored rows at
+                exactly the moment somebody is reading a candidate's score. */}
+            {data.scores.map((s, i) => (
+              <li key={`${i}-${s.criterion}`} className="rounded border p-3 text-sm">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-medium">{s.criterion}</span>
                   <span className={s.unresolved ? "text-amber-700" : "opacity-70"}>
