@@ -314,6 +314,50 @@ public sealed class AdvanceTests(IntegrationFixture fixture)
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         Assert.Contains("advance_candidates", body, StringComparison.Ordinal);
         Assert.Contains("Nothing was written", body, StringComparison.Ordinal);
+
+        // ── WHAT THE REFUSAL COSTS, measured instead of argued ───────────────────────────────
+        // #51's open remedy choice turns on this and nothing else, and until this assertion existed
+        // it had only ever been READ from platform source, never run. The shim throws INSIDE the
+        // tool, which ApprovalEndpoints reaches only AFTER TryBeginExecutionAsync has flipped the
+        // row Pending -> Executing and stamped the recruiter as resolver. So the question is not
+        // whether the recruiter is refused — the asserts above settle that — but whether the TALENT
+        // LEAD'S parked decision survives being refused on their behalf.
+        //
+        // It does not. Nothing in the platform assigns ApprovalStatus.Pending after creation, so
+        // Failed is terminal: the lead's advance cannot be re-approved by anyone and has to be
+        // proposed again from a fresh chat turn. An unauthorized click is therefore not a no-op,
+        // it is a denial of service against the one role that may make the call.
+        // Read through a FRESH scope, never through `approvals` above. That store's DbContext is the
+        // one that created this row, so it tracks the instance and would hand back the Status it was
+        // constructed with no matter what the approve did to the database — a stale read that looks
+        // exactly like "the decision survived".
+        var (readScope, _, _) = await fixture.AuthorizedScopeAsync();
+        using var _r = readScope;
+        var parked = await readScope.ServiceProvider.GetRequiredService<IApprovalStore>().GetAsync(approvalId);
+        Assert.NotNull(parked);
+        Assert.Equal(ApprovalStatus.Failed, parked!.Status);
+        Assert.NotNull(parked.ResolvedByUserId);
+
+        // And the regulatory half. DisclosureEndpoints filters out only Pending and Executing, then
+        // maps every survivor to "rejected" if Rejected and otherwise to "approved" — so this row,
+        // which is an unauthorized click that wrote nothing, is disclosed as an ADVANCE DECISION
+        // APPROVED BY THE RECRUITER. That is a false entry in the record an ADMT disclosure exists
+        // to make true, and it is the strongest argument against simply living with the shim.
+        var disclosure = await recruiter.GetAsync("/api/platform/ai-decisions");
+        var disclosureBody = await disclosure.Content.ReadAsStringAsync();
+        Assert.True(disclosure.IsSuccessStatusCode, $"Disclosure read failed: {disclosureBody}");
+
+        // Located by id and asserted on THIS row's own oversight field. A substring search for
+        // "approved" anywhere in the payload would pass on any unrelated seeded decision and prove
+        // nothing about this one.
+        var entry = JsonDocument.Parse(disclosureBody).RootElement.EnumerateArray()
+            .SingleOrDefault(e => e.TryGetProperty("id", out var id)
+                               && id.GetGuid() == approvalId);
+        Assert.True(entry.ValueKind == JsonValueKind.Object,
+            $"The burned approval is absent from the ADMT disclosure entirely: {disclosureBody}");
+        Assert.Equal("approved", entry.GetProperty("oversight").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(entry.GetProperty("decidedBy").GetString()),
+            "Disclosed as approved by nobody, which is a different defect worth its own issue.");
     }
 
     [Fact]
