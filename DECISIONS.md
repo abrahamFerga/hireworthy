@@ -329,7 +329,7 @@ the role grants:
   approve `reject_candidate` and `propose_rubric`, which their tier *does* permit. The seam can only
   say "all of the queue or none of it"; the thing being separated is per-tool.
 
-**Consequences.** It is **defence in depth, not a fix**, and the difference matters in two ways
+**Consequences.** It is **defence in depth, not a fix**, and the difference matters in three ways
 worth writing down rather than discovering later:
 
 1. It covers only the tools annotated — but *forgetting* one is now a failing test rather than a
@@ -343,5 +343,33 @@ worth writing down rather than discovering later:
    threw") for what is really **403** ("you may not approve this"). The audit record therefore reads
    as a failed execution rather than a denied authorization. `AdvanceTests` asserts the 422
    explicitly, so when the platform gates it properly that test fails and is rewritten on purpose.
+3. **A denied approval consumes the request.** This is the real price of refusing *inside* the tool
+   rather than in front of it, and it is the one consequence that is not merely about wording.
+   `ApprovalEndpoints` reaches the tool only after `TryBeginExecutionAsync` has matched `Pending`,
+   flipped the row to `Executing` and stamped the caller as resolver; the guard then throws, and the
+   endpoint completes the row as `Failed`. **Nothing in `Plenipo.Application` or
+   `Plenipo.Infrastructure` ever assigns `Pending` after creation**, so `Failed` is terminal. The
+   parked decision leaves `ListPendingAsync`, **cannot be re-approved by anyone including the talent
+   lead whose call it was**, and has to be proposed again from a fresh chat turn. An unauthorized
+   click is therefore not a no-op — it is a denial of service against the only role permitted to
+   make the call, reachable by an ordinary recruiter doing their job, since working the queue is
+   exactly what `ManageApprovals` grants them. And `DisclosureEndpoints` filters out only `Pending`
+   and `Executing`, then maps every survivor that is not `Rejected` to `approved` — so the burned
+   row is disclosed in the **ADMT view** as an advance decision *approved by the recruiter whose
+   tier forbids it*. That is the oversight record being wrong about who resolved what, in a
+   product that decides who gets a job.
+
+   Measured, not argued: `A_recruiter_cannot_approve_the_advance_they_are_forbidden_to_propose`
+   reads the row back through a **fresh** scope — the store that created it would hand back a
+   tracked instance and a stale `Pending` that looks exactly like survival — and asserts `Failed`,
+   `ResolvedByUserId`, and `oversight == "approved"` on that row's own disclosure entry located by
+   id. Asserting `Pending` there fails with `Expected: Pending · Actual: Failed`, so the assertion
+   observes the database rather than passing vacuously.
+
+   **Neither remedy #51 listed has this property**: an endpoint-level filter, or de-scoping
+   `ManageApprovals`, both refuse *before* `TryBeginExecutionAsync` and leave the approval `Pending`
+   for a legitimate approver. That is a genuine cost of the option taken here, it is why this ADR is
+   temporary, and `plenipo#145`'s acceptance test now requires the platform-side gate to refuse
+   before the transition rather than merely to refuse.
 
 Nothing here weakens an invariant: it enforces RBAC on a path where it currently is not enforced.
