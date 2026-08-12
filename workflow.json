@@ -38,7 +38,9 @@
 
     "//what-3-means-here": "The //domain-note's list is NOT satisfied by this number and is not overridden by it: approval flags, permission grants, tenant query filters, and anything touching consent or the impact report must still stay human. What enforces that is pr-gates.mjs — its CONTENT_RULES fire on any diff REMOVING or EDITING a line matching RequiresApproval, Permissions., AddPlenipoRole or HasQueryFilter, and demand the `human-approved` label. Consent and impact-report paths are NOT covered by those four rules; if this product grows such a surface, add a PATH_RULE for it before trusting this level.",
 
-    "level": 3,
+    "level": 3,
+    "//trustedAuthors": "Who may merge unattended. merge-gate.mjs authorizes by author identity now, not by a mutable `agent:approved` label anyone with write access could apply; an empty list means nothing merges. Adding a login here grants exactly what the old label lane already granted this repo.",
+    "trustedAuthors": ["abrahamFerga"],
     "maxOpenPRs": 3,
     "maxMergesPerTick": 2,
     "readyFloor": 3,
