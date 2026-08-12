@@ -1,6 +1,3 @@
-# Replace <owner> with the GitHub login read from workflow.json or `gh api user` — never a hardcoded
-# name, or this file works for exactly one account.
-#
 # CODEOWNERS is the human-visibility half of the spine policy: it puts a named person on the review
 # of anything touching the five guarantees the platform exists to provide. The ENFORCING half is
 # `pr-gates.mjs`, which fails as a required status check — CODEOWNERS only requests a review, and
