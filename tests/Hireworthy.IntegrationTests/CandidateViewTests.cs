@@ -115,7 +115,8 @@ public sealed class CandidateViewTests(IntegrationFixture fixture)
         var start = cv.IndexOf(quote, StringComparison.Ordinal);
         await tools.ScreenApplicantAsync("APP-CVCITED",
         [
-            new ScoredCriterion("Production Python experience", 5, quote, start, start + quote.Length, false, "Owned it."),
+            new ScoredCriterion(SeededRubric.PythonExperience, 5, quote, start, start + quote.Length, false, "Owned it."),
+            .. SeededRubric.UnresolvedExcept(SeededRubric.PythonExperience),
         ]);
 
         using var client = fixture.AdminClient();
@@ -137,8 +138,13 @@ public sealed class CandidateViewTests(IntegrationFixture fixture)
         Assert.Equal(quote, one.GetProperty("text").GetString());
         Assert.Equal("Production Python experience", one.GetProperty("criteria").EnumerateArray().Single().GetString());
 
-        // The score panel carries the quotation as a quotation.
-        var score = body.GetProperty("scores").EnumerateArray().Single();
+        // The score panel carries the quotation as a quotation. Selected by criterion rather than
+        // by being the only row: a valid screening now covers the whole rubric (issue #44), so the
+        // other four criteria are present and unresolved. The citation and unresolved assertions
+        // below are unchanged; the implicit "exactly one score row" that the bare Single() used to
+        // carry is NOT — that constraint now lives in ScreeningTests, which asserts Scores.Count.
+        var score = body.GetProperty("scores").EnumerateArray()
+            .Single(s => s.GetProperty("criterion").GetString() == SeededRubric.PythonExperience);
         Assert.Equal(quote, score.GetProperty("citationText").GetString());
         Assert.False(score.GetProperty("unresolved").GetBoolean());
     }
