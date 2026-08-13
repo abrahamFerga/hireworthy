@@ -42,6 +42,16 @@ public sealed class HiringToolSource : IModuleToolSource
             new ModuleTool
             {
                 ModuleId = ModuleId,
+                Name = "list_applicants",
+                Permission = Permissions.ForTool(ModuleId, "list_applicants"),
+                Function = AIFunctionFactory.Create(tools.ListApplicantsAsync, name: "list_applicants"),
+                // A read. It reports where candidates are; it moves nobody. Ungated deliberately:
+                // parking a board refresh on a human would make the approval queue unreadable, and
+                // a queue nobody reads is a gate that has stopped working.
+            },
+            new ModuleTool
+            {
+                ModuleId = ModuleId,
                 Name = "get_applicant",
                 Permission = Permissions.ForTool(ModuleId, "get_applicant"),
                 Function = AIFunctionFactory.Create(tools.GetApplicantAsync, name: "get_applicant"),
