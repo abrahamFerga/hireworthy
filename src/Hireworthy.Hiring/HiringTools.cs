@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using Hireworthy.Hiring.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Plenipo.Application.Authorization;
+using Plenipo.Core.Identity;
 using Plenipo.Core.Multitenancy;
 
 namespace Hireworthy.Hiring;
@@ -44,8 +46,51 @@ public sealed record ScoredCriterion(
 /// approved rubric: nobody may be scored against criteria a human has not accepted, and the
 /// platform parks the call before this method's effect is committed.
 /// </remarks>
-public sealed class HiringTools(HiringDbContext db, ITenantContext tenantContext)
+public sealed class HiringTools(HiringDbContext db, ITenantContext tenantContext, ICurrentUser currentUser)
 {
+    /// <summary>
+    /// Refuses a write the CALLER is not permitted to make, whoever they are and however they got
+    /// here.
+    /// </summary>
+    /// <remarks>
+    /// TODO(plenipo#145): delete this, its three call sites — <c>propose_rubric</c>,
+    /// <c>advance_candidates</c>, <c>reject_candidate</c> — and the <c>ICurrentUser</c> dependency
+    /// once the platform re-checks a tool's own permission against the approver.
+    /// <para>
+    /// The platform gates a tool's permission exactly once — in <c>AuthorizedAgentRunner</c>, which
+    /// filters the tool list before the model sees a schema. <c>ApprovalExecutor</c> then
+    /// re-invokes an approved call without reading <c>ModuleTool.Permission</c> at all, and
+    /// <c>ApprovalEndpoints</c> authorizes approving on <c>Permissions.ManageApprovals</c> alone.
+    /// So a <c>hiring-recruiter</c> — who cannot propose <c>advance_candidates</c>, because the
+    /// runner removes it from their tool list entirely — can perform it by approving a talent
+    /// lead's parked call. Product issue #51; platform request plenipo#145.
+    /// </para>
+    /// <para>
+    /// <b>Defence in depth, not the fix.</b> It covers only the three tools annotated below, so
+    /// every gated tool this module gains must remember to call it — which is the argument for the
+    /// check living in the platform. It also refuses at the tool, so the approve endpoint answers
+    /// 422 ("approved, but the tool threw") where a real gate would answer 403. Deliberately left
+    /// as three explicit call sites rather than generalised into a wrapper: a shim that looks like
+    /// a feature gets adopted and outlives its reason.
+    /// </para>
+    /// <para>
+    /// Safe on the normal path by construction — the runner has already filtered on this exact
+    /// permission string, so any caller who reached the tool through a chat turn passes here.
+    /// </para>
+    /// </remarks>
+    private void RequirePermissionToWrite(string toolName)
+    {
+        var permission = Permissions.ForTool(HiringModule.Id, toolName);
+        if (currentUser.HasPermission(permission))
+        {
+            return;
+        }
+
+        throw new UnauthorizedAccessException(
+            $"{currentUser.DisplayName ?? "This user"} does not hold {permission}, so they may not "
+          + $"run {toolName} — including by approving someone else's. Nothing was written.");
+    }
+
     [Description("List the organisation's requisitions with their status and whether a rubric has been approved.")]
     public async Task<string> ListRequisitionsAsync(CancellationToken cancellationToken = default)
     {
@@ -141,6 +186,15 @@ public sealed class HiringTools(HiringDbContext db, ITenantContext tenantContext
         [Description("Why these criteria follow from the job description. Recorded with the approval.")] string rationale,
         CancellationToken cancellationToken = default)
     {
+        // TODO(plenipo#145) — first statement, before validation, for the same reason as the two
+        // decision tools: a caller who may not propose a rubric learns nothing about the
+        // requisition from the shape of the error. See RequirePermissionToWrite.
+        //
+        // This one is not hypothetical hardening. Under ADR-0003 the rubric is the instrument every
+        // applicant is measured against, and it is approval-gated — so a tenant that grants
+        // ManageApprovals without propose_rubric reopens #51 against the rubric itself.
+        RequirePermissionToWrite("propose_rubric");
+
         if (criteria is null || criteria.Length == 0)
         {
             throw new ArgumentException(
@@ -517,6 +571,10 @@ public sealed class HiringTools(HiringDbContext db, ITenantContext tenantContext
         [Description("Why these candidates should advance. Recorded with the decision, permanently.")] string reason,
         CancellationToken cancellationToken = default)
     {
+        // Before any validation, so a caller who may not make this decision learns nothing about
+        // who is in the pipeline from the shape of the error. See RequirePermissionToWrite.
+        RequirePermissionToWrite("advance_candidates");
+
         if (references is null || references.Length == 0)
         {
             throw new ArgumentException("Name at least one candidate to advance.", nameof(references));
@@ -631,6 +689,11 @@ public sealed class HiringTools(HiringDbContext db, ITenantContext tenantContext
         [Description("Why this candidate is being rejected, in terms of the rubric. Recorded permanently and readable by an auditor.")] string reason,
         CancellationToken cancellationToken = default)
     {
+        // The decision this product is ultimately judged on, and the same execute-path hole:
+        // hiring-sourcer holds ManageApprovals nowhere, but any future role that works the queue
+        // without holding reject_candidate would reach this. See RequirePermissionToWrite.
+        RequirePermissionToWrite("reject_candidate");
+
         if (string.IsNullOrWhiteSpace(reference))
         {
             throw new ArgumentException("Name the candidate to reject.", nameof(reference));

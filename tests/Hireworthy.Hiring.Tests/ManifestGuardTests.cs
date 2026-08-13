@@ -1,8 +1,10 @@
 using Hireworthy.Hiring;
 using Hireworthy.Hiring.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Plenipo.Application.Authorization;
+using Plenipo.Core.Identity;
 using Plenipo.Core.Multitenancy;
 using Plenipo.Modules.Sdk;
 using Xunit;
@@ -26,6 +28,22 @@ public sealed class ManifestGuardTests
         public Guid? TenantId => Tenant;
         public bool HasTenant => true;
         public Guid RequireTenantId() => Tenant;
+    }
+
+    /// <summary>
+    /// Grants nothing, on purpose. This file inspects tool DECLARATIONS and never invokes one, so
+    /// a stub that answered "yes" to every permission would quietly start passing the day one of
+    /// these tests did call a tool. TODO(plenipo#145) — delete alongside the shim it exists for.
+    /// </summary>
+    private sealed class GrantsNothingCurrentUser : ICurrentUser
+    {
+        public Guid? UserId => null;
+        public string? Subject => null;
+        public string? DisplayName => null;
+        public Guid? TenantId => null;
+        public bool IsAuthenticated => false;
+        public IReadOnlySet<string> Permissions => new HashSet<string>(StringComparer.Ordinal);
+        public bool HasPermission(string permission) => false;
     }
 
     [Fact]
@@ -121,6 +139,81 @@ public sealed class ManifestGuardTests
     }
 
     [Fact]
+    public async Task Every_approval_gated_tool_re_checks_the_callers_permission()
+    {
+        // TODO(plenipo#145) — delete alongside the shim, once the platform gates the approve path.
+        //
+        // #51: the platform enforces a tool's permission exactly once, on the PROPOSE path.
+        // ApprovalExecutor re-invokes the tool without ever reading tool.Permission, so anyone
+        // holding ManageApprovals can execute any gated tool by approving someone else's parked
+        // call. The shim is RequirePermissionToWrite as the first statement of each gated tool.
+        //
+        // Without this test that shim is a documented hope: "every future gated tool must remember
+        // to call it". propose_rubric had already forgotten — it is RequiresApproval and was
+        // unguarded, which under ADR-0003 means a tenant granting ManageApprovals without
+        // propose_rubric could rewrite the instrument every applicant is measured against.
+        //
+        // GrantsNothingCurrentUser grants nothing, so a guarded tool refuses on its FIRST statement
+        // and never touches the DbContext — which is why this needs no Postgres despite invoking
+        // real tools. An unguarded tool falls through to validation or the context and throws
+        // something else; when propose_rubric was unguarded this test caught it as an
+        // ObjectDisposedException, because BuildToolSourceTools disposes the scope it resolved
+        // them from. Any exception that is not UnauthorizedAccessException means the tool got past
+        // the re-check, which is the thing being asserted — not the particular type it failed with.
+        var executable = BuildToolSourceTools();
+
+        // The union of every gated tool's parameters. AIFunctionFactory ignores the ones a given
+        // tool does not declare, so one bag serves all three and adding a tool needs no new entry
+        // unless it introduces a new parameter name.
+        var arguments = new AIFunctionArguments
+        {
+            ["reference"] = "REQ-142",
+            ["references"] = new[] { "APP-1001" },
+            ["criteria"] = new[] { new ProposedCriterion("Production Python experience", "Shipped Python in production", 3) },
+            ["rationale"] = "Derived from the job description.",
+            ["reason"] = "Recorded with the decision.",
+        };
+
+        // The UNION of both sets, not the manifest descriptors alone. The runner unions the two
+        // RequiresApproval flags (HiringToolSource says so in its own comment), so a tool marked
+        // gated on the ModuleTool but NOT on the manifest descriptor is approval-gated at runtime
+        // and reachable through ApprovalExecutor — the exact path #51 is about — while being
+        // invisible to a descriptors-only enumeration. Reading only one set here would make this
+        // test's whole claim ("forgetting one is now a failing test") true for the manifest-first
+        // path and false for the tool-source-first one.
+        var gated = Module.Manifest.Tools.Where(t => t.RequiresApproval)
+            .Select(t => (t.Name, t.Permission))
+            .Concat(executable.Where(t => t.RequiresApproval).Select(t => (t.Name, t.Permission)))
+            .Distinct()
+            .ToList();
+
+        Assert.NotEmpty(gated);
+
+        foreach (var descriptor in gated)
+        {
+            var tool = executable.Single(t => t.Name == descriptor.Name);
+
+            var ex = await Record.ExceptionAsync(() => tool.Function.InvokeAsync(arguments).AsTask());
+
+            Assert.True(ex is not null,
+                $"Approval-gated tool '{descriptor.Name}' ran to completion for a caller holding NO "
+              + "permissions at all. It does not call RequirePermissionToWrite, so anyone with "
+              + "ManageApprovals can execute it by approving someone else's parked call (#51).");
+
+            var unauthorized = ex as UnauthorizedAccessException ?? ex!.InnerException as UnauthorizedAccessException;
+
+            Assert.True(unauthorized is not null,
+                $"Approval-gated tool '{descriptor.Name}' threw {ex!.GetType().Name} rather than "
+              + $"UnauthorizedAccessException for a caller holding no permissions, so it got PAST "
+              + $"the permission re-check and failed on something else. Add "
+              + $"RequirePermissionToWrite(\"{descriptor.Name}\") as its first statement. "
+              + $"Message was: {ex.Message}");
+
+            Assert.Contains(descriptor.Permission, unauthorized!.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void Every_approval_gated_tool_is_named_in_the_agent_instructions()
     {
         // Registration and instruction are separate edits, and forgetting the second one is silent:
@@ -181,6 +274,7 @@ public sealed class ManifestGuardTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext, FixedTenantContext>();
+        services.AddSingleton<ICurrentUser, GrantsNothingCurrentUser>();
         services.AddDbContext<HiringDbContext>(o => o.UseNpgsql("Host=localhost;Database=guard"));
         services.AddScoped<HiringTools>();
 
