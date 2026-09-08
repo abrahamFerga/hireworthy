@@ -1,6 +1,6 @@
 # Hireworthy — architecture
 
-**Module:** `hiring` · **Platform pin:** `0.1.0-alpha.28` (vendored, `Directory.Build.props`)
+**Module:** `hiring` · **Platform pin:** `0.1.0-alpha.29` (vendored, `Directory.Build.props`)
 **Level: L2** — rule checks over a document. Nothing here ran. The L1 proof arrives per issue in
 `/deliver:work-next-issue`; epic 1's has already landed (see §13).
 
@@ -93,7 +93,7 @@ against it — **not from documentation**:
 | Fact | Value | Where it was read |
 |---|---|---|
 | Package | **`@plenipo/ui`** | `plenipo/frontend/plenipo-ui/package.json` → `name` |
-| Version to pin | **`0.1.0-alpha.28`** — the *same* number as the .NET pin | `networthy-ui/package.json`; matches this repo's `Directory.Build.props` |
+| Version to pin | **`0.1.0-alpha.29`** — the *same* number as the .NET pin | `networthy-ui/package.json`; matches this repo's `Directory.Build.props` |
 | Registration | `defineModule("hiring", { tabs: { candidate: …, pipeline: … } })` | `plenipo-ui/src/index.ts` exports `defineModule`, `createModuleUiRegistry`, `resolveTabComponent` from `./lib/moduleUi` |
 | Mounting | `<PlenipoApp moduleUi={[hiring]} branding={{ name: "Hireworthy" }} />` | `networthy-ui/src/App.tsx` |
 | Project layout | `frontend/hireworthy-ui/` | mirrors `networthy/frontend/networthy-ui/` |

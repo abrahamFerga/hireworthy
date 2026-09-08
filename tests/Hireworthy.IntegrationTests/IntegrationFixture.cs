@@ -1,10 +1,4 @@
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Plenipo.Infrastructure.Context;
-using Plenipo.Infrastructure.Persistence;
-using Testcontainers.PostgreSql;
+using Plenipo.Testing;
 using Xunit;
 
 namespace Hireworthy.IntegrationTests;
@@ -15,100 +9,44 @@ namespace Hireworthy.IntegrationTests;
 /// real except the AI provider (Mock) — the same keyless posture the Plenipo platform's own suite
 /// uses, and what lets this run on a bare clone with no API key.
 /// </summary>
-public sealed class IntegrationFixture : IAsyncLifetime
+/// <remarks>
+/// The container, the factory, the dev-auth clients and the tenant helpers now come from
+/// <see cref="PlenipoHostFixture{TProgram}"/> in the Plenipo.Testing kit (fleet testing contract,
+/// docs/TESTING_CONTRACT.md), so this file is only what the kit cannot know: which module, which
+/// tools, which roles. Everything the product's own tests call — <c>AdminClient</c>,
+/// <c>AuthorizedScopeAsync</c>, <c>Factory</c> — keeps the same shape it had when this class owned
+/// the container itself.
+/// </remarks>
+public sealed class IntegrationFixture : PlenipoHostFixture<Program>
 {
-    private PostgreSqlContainer? _postgres;
-
-    public WebApplicationFactory<Program> Factory { get; private set; } = default!;
-
-    public async Task InitializeAsync()
-    {
-        // Ryuk is the Testcontainers reaper container. It needs the Docker socket mounted, which
-        // Docker Desktop on Windows does not always grant; the containers this fixture creates are
-        // disposed explicitly below, so the reaper buys nothing here and costs a startup failure.
-        Environment.SetEnvironmentVariable("TESTCONTAINERS_RYUK_DISABLED", "true");
-
-        _postgres = new PostgreSqlBuilder()
-            // pgvector, not stock postgres: the platform's RAG migration creates a vector column at
-            // startup and fails on the `vector` type without the extension. Keep this major in sync
-            // with the AppHost (src/Hireworthy.AppHost/AppHost.cs pins pg17) — a product that runs
-            // on pg17 and tests on pg16 is testing something it does not ship.
-            .WithImage("pgvector/pgvector:pg17")
-            .WithDatabase("plenipo_platform")
-            .WithUsername("postgres")
-            .WithPassword("postgres")
-            .Build();
-        await _postgres.StartAsync();
-
-        // The platform resolves both databases by connection-string NAME. In production they are
-        // separate databases (see the AppHost); one container is enough to exercise the schemas.
-        Environment.SetEnvironmentVariable("ConnectionStrings__plenipo-platform", _postgres.GetConnectionString());
-        Environment.SetEnvironmentVariable("ConnectionStrings__plenipo-audit", _postgres.GetConnectionString());
-
-        Factory = new HireworthyAppFactory();
-
-        // The first request boots the host (migrations + seeding); the authenticated call makes the
-        // request enricher provision the dev-tenant user that AuthorizedScopeAsync relies on.
-        using var warmup = AdminClient();
-        (await warmup.GetAsync("/alive")).EnsureSuccessStatusCode();
-        (await warmup.GetAsync("/api/platform/modules")).EnsureSuccessStatusCode();
-    }
-
-    public async Task DisposeAsync()
-    {
-        Environment.SetEnvironmentVariable("ConnectionStrings__plenipo-platform", null);
-        Environment.SetEnvironmentVariable("ConnectionStrings__plenipo-audit", null);
-
-        if (Factory is not null)
-        {
-            await Factory.DisposeAsync();
-        }
-
-        if (_postgres is not null)
-        {
-            await _postgres.DisposeAsync();
-        }
-    }
+    /// <summary>
+    /// What the platform's invariant packs need to know about this product. Every value is read
+    /// from the hiring manifest (src/Hireworthy.Hiring/HiringModule.cs) and the role baselines
+    /// (src/Hireworthy.Host/Program.cs), never invented:
+    /// <list type="bullet">
+    /// <item><c>list_requisitions</c> — a read, ungated, audited.</item>
+    /// <item><c>advance_candidates</c> — the load-bearing write, <c>RequiresApproval = true</c>.
+    /// It is the tool hireworthy#51 was about.</item>
+    /// <item><c>hiring-talent-lead</c> — the accountable owner: chat, <c>tools.hiring.*</c> AND
+    /// <c>chat.approvals.manage</c>, so it can both ask for an advance and decide one.</item>
+    /// <item><c>hiring-sourcer</c> — the narrow tier, deliberately holding neither
+    /// <c>tools.hiring.advance_candidates</c> nor <c>chat.approvals.manage</c> (ADR-0004). That
+    /// exclusion is what S01, S04a and the red-team pack lean on.</item>
+    /// </list>
+    /// </summary>
+    public override ProductContract Contract { get; } = new(
+        ModuleId: "hiring",
+        ReadTool: "list_requisitions",
+        WriteTool: "advance_candidates",
+        ApproverRole: "hiring-talent-lead",
+        NarrowRole: "hiring-sourcer",
+        ReadEndpoints: ["/api/hiring/requisitions"]);
 
     /// <summary>
-    /// An authorized HTTP client for the dev tenant. PREFER THIS: it goes through the real
-    /// pipeline, so it is the only way to prove RBAC, the approval gate and the AG-UI protocol.
-    /// Pass a narrower role to assert a 403.
+    /// pgvector, and pg17 to match the AppHost (src/Hireworthy.AppHost/AppHost.cs) — a product that
+    /// runs on pg17 and tests on the kit's pg16 default is testing something it does not ship.
     /// </summary>
-    public HttpClient AdminClient(string roles = "system_admin", string subject = "it-admin")
-    {
-        var client = Factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Dev-Subject", subject);
-        client.DefaultRequestHeaders.Add("X-Dev-Tenant", "dev");
-        client.DefaultRequestHeaders.Add("X-Dev-Roles", roles);
-        return client;
-    }
-
-    /// <summary>
-    /// A DI scope with tenant + user + permissions populated — how module tools run AFTER the
-    /// platform's auth/approval pipeline has done its part. Deliberately bypasses RBAC and the
-    /// approval gate, so it can never prove either works: use <see cref="AdminClient"/> for those.
-    /// </summary>
-    public async Task<(IServiceScope Scope, Guid TenantId, Guid UserId)> AuthorizedScopeAsync()
-    {
-        var scope = Factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-        var context = scope.ServiceProvider.GetRequiredService<RequestContext>();
-        var tenant = await db.Tenants.FirstAsync(t => t.Slug == "dev");
-        context.SetTenant(tenant.Id);
-        var user = await db.Users.IgnoreQueryFilters().FirstAsync(u => u.TenantId == tenant.Id);
-        context.SetUser(user.Id, user.Subject, user.DisplayName);
-        context.SetPermissions(["*"]);
-        return (scope, tenant.Id, user.Id);
-    }
-
-    private sealed class HireworthyAppFactory : WebApplicationFactory<Program>
-    {
-        // Development is what turns on dev-auth and the Mock AI provider
-        // (src/Hireworthy.Host/appsettings.Development.json). It is also what the AppHost must
-        // propagate explicitly at runtime — see ADR-0010; without it the host throws at startup.
-        protected override void ConfigureWebHost(IWebHostBuilder builder) => builder.UseEnvironment("Development");
-    }
+    protected override string PostgresImage => "pgvector/pgvector:pg17";
 }
 
 [CollectionDefinition("api")]

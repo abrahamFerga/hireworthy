@@ -1,7 +1,11 @@
+using System.Net;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Hireworthy.Hiring;
 using Hireworthy.Hiring.Persistence;
+using Plenipo.Application.Approvals;
+using Plenipo.Core.Platform;
 using Xunit;
 
 namespace Hireworthy.IntegrationTests;
@@ -239,5 +243,68 @@ public sealed class AdvanceTests(IntegrationFixture fixture)
 
         Assert.False(turn.Failed, $"RUN_ERROR: {turn.Error}");
         Assert.DoesNotContain("advance_candidates", turn.ToolCalls);
+    }
+
+    [Fact]
+    public async Task A_recruiter_cannot_release_the_advance_they_are_forbidden_to_propose()
+    {
+        // THE hireworthy#51 REPRODUCTION, in the hiring spelling. `hiring-recruiter` holds
+        // chat.approvals.manage (it decides rubrics and rejections) but deliberately NOT
+        // tools.hiring.advance_candidates — SPEC.md §3 makes advancing the hiring manager's call.
+        // On alpha.28 this exact arrangement RELEASED the parked advance: the approvals permission
+        // was a side door around the role model, which is what #51 reported. It was first written
+        // asserting that old outcome and observed red against alpha.29 —
+        //
+        //   approve was refused: 403 {"title":"Releasing this action needs the tool's own permission.",
+        //   "status":403,"detail":"POST /api/chat/approvals/{id}/approve requires
+        //   tools.hiring.advance_candidates to release 'advance_candidates' (hiring); the caller
+        //   holds chat.approvals.manage only"}
+        //
+        // — the right reason, so it is inverted here to assert the platform's behaviour
+        // (plenipo#145 / #153). The audit half of the invariant (one AccessDenied event naming the
+        // missing permission, nothing executed) is the kit's PlenipoSpineConformance.S04; this test
+        // is the product's own statement that the tier asymmetry survives the approval lane.
+        var (scope, tenantId, userId) = await fixture.AuthorizedScopeAsync();
+        using var _s = scope;
+        var (tools, db) = await ArrangeAsync(scope);
+
+        var reference = await NewUnscreenedApplicantAsync(db, tenantId, "APPROVE51");
+        await ScreenAsync(tools, db, reference);
+
+        var approvals = scope.ServiceProvider.GetRequiredService<IApprovalStore>();
+        var approvalId = Guid.NewGuid();
+        await approvals.RecordPendingAsync(new PendingApproval
+        {
+            Id = approvalId,
+            TenantId = tenantId,
+            UserId = userId,
+            UserDisplay = "the talent lead, who may make this call",
+            ConversationId = Guid.NewGuid(),
+            ModuleId = HiringModule.Id,
+            ToolName = "advance_candidates",
+            ArgumentsJson = JsonSerializer.Serialize(new
+            {
+                references = new[] { reference },
+                reason = "Released by someone whose tier is denied this decision",
+            }),
+        });
+
+        using var recruiter = fixture.AdminClient(roles: "hiring-recruiter", subject: "it-recruiter-51");
+        var response = await recruiter.PostAsync($"/api/chat/approvals/{approvalId}/approve", content: null);
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        // The refusal has to name the permission that is missing, not just say no: an operator
+        // reading the audit trail must be able to tell a role-model gap from an outage.
+        Assert.Contains("tools.hiring.advance_candidates", body, StringComparison.Ordinal);
+
+        // And nothing moved. A 403 that still advanced the candidate would be the same defect.
+        // `Applied` is where NewUnscreenedApplicantAsync leaves them: ScreenAsync writes a
+        // screening PROPOSAL and deliberately moves nobody's stage (ADR-0004), so an executed
+        // advance — and only an executed advance — would read `Screening` here.
+        db.ChangeTracker.Clear();
+        var applicant = await db.Applicants.SingleAsync(a => a.Reference == reference);
+        Assert.Equal(ApplicantStage.Applied, applicant.Stage);
     }
 }

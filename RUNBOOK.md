@@ -58,7 +58,7 @@ stdout. See ADR-0010.
 |---|---|---|---|
 | 1 | `dotnet build Hireworthy.slnx` | it compiles, warnings are errors | L1 |
 | 2 | `dotnet test tests/Hireworthy.Hiring.Tests` | manifest integrity, tool/permission parity, **per-entity tenant filters** | L1 |
-| 3 | `dotnet test tests/Hireworthy.IntegrationTests` | the real host on a real Postgres: migrations, seeding, RBAC, the approval gate, the AG-UI protocol | L1+L3 |
+| 3 | `dotnet test tests/Hireworthy.IntegrationTests` | the real host on a real Postgres: migrations, seeding, RBAC, the approval gate, the AG-UI protocol — **plus the platform's own invariants** (`S01`–`S15`, `R1`–`R4`, manifest, tenancy) run against this host by `Plenipo.Testing` | L1+L3 |
 | 4 | the `Evals/cases/*.json` inside rung 3 | prompt-shaped regressions — instructions and tool descriptions | L3 |
 | 5 | a real request or the UI | that the feature does what the issue asked | L3 |
 
