@@ -11,3 +11,12 @@ packages:
 # install script is arbitrary code execution at dependency-install time.
 allowBuilds:
   esbuild: true
+
+# The minimum-release-age policy exists to keep a freshly-published, possibly compromised version of
+# a third-party package out of an unattended install. The platform we are BUILT ON is not a
+# third party: its release is the thing this repo is deliberately adopting, pinned to the same
+# version string as the .NET packages in Directory.Build.props. Written by `pnpm install` on the
+# alpha.29 bump; each entry is exact, so a later version is still gated.
+minimumReleaseAgeExclude:
+  - '@plenipo/client@0.1.0-alpha.29'
+  - '@plenipo/ui@0.1.0-alpha.29'

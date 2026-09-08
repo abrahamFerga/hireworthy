@@ -25,7 +25,9 @@ src/Hireworthy.AppHost/     Aspire orchestration. References the Host and NOTHIN
 src/Hireworthy.Host/        The product. ONE package reference. Program.cs is the seam list.
 src/Hireworthy.Hiring/      The ONLY real code: IModule + manifest + tools + Persistence/.
 tests/Hireworthy.Hiring.Tests/       Module guard: manifest integrity, tool parity, tenant filters.
-tests/Hireworthy.IntegrationTests/   Testcontainers pgvector + the real host.
+tests/Hireworthy.IntegrationTests/   The real host on Testcontainers pgvector, via the Plenipo.Testing
+                                    conformance kit: the fixture, the eval runner and the platform's
+                                    own invariant packs come from the package, not from this repo.
 ```
 
 There is no `Domain`/`Application`/`Infrastructure` split and no `ServiceDefaults` project. That is
