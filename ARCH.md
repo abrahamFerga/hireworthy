@@ -1,6 +1,6 @@
 # Hireworthy — architecture
 
-**Module:** `hiring` · **Platform pin:** `0.1.0-alpha.29` (vendored, `Directory.Build.props`)
+**Module:** `hiring` · **Platform pin:** `0.1.0-alpha.29.17` (vendored, `Directory.Build.props`)
 **Level: L2** — rule checks over a document. Nothing here ran. The L1 proof arrives per issue in
 `/deliver:work-next-issue`; epic 1's has already landed (see §13).
 
