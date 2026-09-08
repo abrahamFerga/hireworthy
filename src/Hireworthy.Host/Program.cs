@@ -35,6 +35,9 @@ builder.Services.AddPlenipoRole("hiring-sourcer",
     "tools.hiring.get_requisition",
     // Screening work: read a candidate's CV and record what it says. Both are reads or derived
     // writes that move nobody's stage — the sourcer still approves nothing (ADR-0004).
+    // list_applicants is the Pipeline board's permission: a sourcer works a pile, so seeing the
+    // pile is their core job. It is a READ — the board cannot move anybody (issue #15).
+    "tools.hiring.list_applicants",
     "tools.hiring.get_applicant",
     "tools.hiring.parse_cv",
     // Screening is the sourcer's core job. It writes a PROPOSAL with cited evidence and moves
@@ -51,6 +54,8 @@ builder.Services.AddPlenipoRole("hiring-recruiter",
     HiringModule.ViewHiring,
     "tools.hiring.list_requisitions",
     "tools.hiring.get_requisition",
+    // The Pipeline board's permission. A read; the board proposes moves and makes none.
+    "tools.hiring.list_applicants",
     "tools.hiring.get_applicant",
     "tools.hiring.parse_cv",
     "tools.hiring.screen_applicant",

@@ -98,3 +98,43 @@ GET {{host}}/api/hiring/candidates/APP-NOPE
 X-Dev-Subject: {{subject}}
 X-Dev-Tenant: {{tenant}}
 X-Dev-Roles: {{roles}}
+
+### The Pipeline board's data endpoint — every stage as a column, in stage order, with the
+### candidates standing in each. READ ONLY: there is deliberately no write counterpart. Dragging a
+### card proposes a move; advancing and rejecting go through the approval-gated tools.
+GET {{host}}/api/hiring/pipeline?requisition=REQ-142
+X-Dev-Subject: {{subject}}
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: {{roles}}
+
+### No requisition named — opens on the first by reference, deterministically. A board has to open
+### on something, and "whichever the database returned" is not that.
+GET {{host}}/api/hiring/pipeline
+X-Dev-Subject: {{subject}}
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: {{roles}}
+
+### Same endpoint as compliance — MUST be 403. It lists candidates by name, and that tier is
+### deliberately denied every candidate read so the person auditing decisions cannot influence them.
+GET {{host}}/api/hiring/pipeline?requisition=REQ-142
+X-Dev-Subject: it-compliance
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: hiring-compliance
+
+### Unknown requisition — MUST be 404, not an empty board.
+GET {{host}}/api/hiring/pipeline?requisition=REQ-NOPE
+X-Dev-Subject: {{subject}}
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: {{roles}}
+
+### The move that MUST NOT exist — MUST be 404/405. A stage-writing route here would let
+### hiring-recruiter (holds ManageApprovals, deliberately NOT advance_candidates) advance a
+### candidate, because ApprovalExecutor re-invokes an approved tool without re-checking its
+### permission. Guarded by PipelineTests.The_board_offers_no_route_that_moves_a_candidate_between_stages.
+PUT {{host}}/api/hiring/pipeline/APP-1001
+X-Dev-Subject: {{subject}}
+X-Dev-Tenant: {{tenant}}
+X-Dev-Roles: hiring-recruiter
+Content-Type: application/json
+
+{ "stage": "Interview" }

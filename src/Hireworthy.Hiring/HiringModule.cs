@@ -100,6 +100,15 @@ public sealed class HiringModule : IModule
             },
             new ToolDescriptor
             {
+                Name = "list_applicants",
+                Description =
+                    "List the applicants on one requisition, e.g. 'REQ-142', with their stage and "
+                  + "screening score. Optionally narrow to a single stage.",
+                Permission = Permissions.ForTool(Id, "list_applicants"),
+                // A read — it reports where candidates are and moves nobody.
+            },
+            new ToolDescriptor
+            {
                 Name = "get_applicant",
                 Description =
                     "Get one applicant by reference, e.g. 'APP-1001', including their CV text and anything already extracted from it.",
@@ -175,6 +184,21 @@ public sealed class HiringModule : IModule
                 // registers against this tab ID — not the route — via defineModule("hiring",
                 // { tabs: { candidate: … } }), so renaming this Id silently unmounts the component
                 // with no error anywhere.
+            },
+            new TabDescriptor
+            {
+                Id = "pipeline",
+                Label = "Pipeline",
+                Route = "/hiring/pipeline",
+                Icon = "columns-3",
+                Order = 3,
+                Permission = Permissions.ForTool(Id, "list_applicants"),
+                // No DataEndpoint: CUSTOM REACT, same contract as the Candidate tab. A board is
+                // columns of draggable cards; no declarative table expresses that.
+                //
+                // The permission is the READ tool's, not ViewHiring, because the board lists
+                // candidates by name. hiring-compliance holds neither, which is the point of that
+                // tier — the person auditing decisions must not be able to see the pipeline.
             },
             new TabDescriptor
             {
@@ -563,6 +587,94 @@ public sealed class HiringModule : IModule
             })
             .RequireAuthorization(PermissionRequirement.PolicyName(ViewHiring))
             .WithName("Hiring_ListRequisitions");
+
+        // Backs the custom-React Pipeline board: every stage as a column, in stage order, with the
+        // candidates standing in each.
+        //
+        // THERE IS DELIBERATELY NO WRITE COUNTERPART TO THIS, and that is the load-bearing decision
+        // in the board (issue #15). Dragging a card proposes a move; it does not make one. Advancing
+        // and rejecting go through advance_candidates and reject_candidate, which are approval-gated
+        // AND permission-checked by the agent runner before the model is ever offered them.
+        //
+        // Neither a direct stage write nor "queue a PendingApproval for advance_candidates" is an
+        // acceptable shortcut here, and the second one is the tempting one: the platform's
+        // ApprovalExecutor re-invokes an approved tool WITHOUT re-checking that tool's permission, so
+        // a board route that queued the approval would let hiring-recruiter — who holds
+        // ManageApprovals and deliberately NOT tools.hiring.advance_candidates (Program.cs) — advance
+        // a candidate. That is the one decision the role model withholds from that tier.
+        // PipelineTests.The_board_offers_no_route_that_moves_a_candidate_between_stages guards it.
+        group.MapGet("/pipeline", async (
+                string? requisition, HiringDbContext db, CancellationToken ct) =>
+            {
+                // The picker's options, so the tab needs one round trip rather than two.
+                var requisitions = await db.Requisitions
+                    .OrderBy(r => r.Reference)
+                    .Select(r => new { reference = r.Reference, title = r.Title })
+                    .ToListAsync(ct);
+
+                if (requisitions.Count == 0)
+                {
+                    return Results.Ok(new { requisitions, requisition = (string?)null, title = (string?)null, columns = Array.Empty<object>() });
+                }
+
+                // No requisition named: the first by reference, deterministically. A board has to
+                // open on something, and "whichever the database happened to return" is not that.
+                var selected = string.IsNullOrWhiteSpace(requisition)
+                    ? requisitions[0].reference
+                    : requisition;
+
+                var target = await db.Requisitions
+                    .FirstOrDefaultAsync(r => r.Reference == selected, ct);
+
+                if (target is null)
+                {
+                    return Results.NotFound(new { requisition = selected, error = "No such requisition." });
+                }
+
+                var applicants = await db.Applicants
+                    .Where(a => a.RequisitionId == target.Id)
+                    .OrderBy(a => a.Reference)
+                    .Select(a => new
+                    {
+                        reference = a.Reference,
+                        fullName = a.FullName,
+                        stage = a.Stage,
+                        screening = db.ScreeningResults
+                            .Where(r => r.ApplicantId == a.Id && r.Status == ScreeningStatus.Proposed)
+                            .OrderByDescending(r => r.ScreenedAt)
+                            .Select(r => new
+                            {
+                                total = r.TotalScore,
+                                max = r.MaxScore,
+                                unresolved = r.UnresolvedCount,
+                            })
+                            .FirstOrDefault(),
+                    })
+                    .ToListAsync(ct);
+
+                // EVERY stage gets a column, including the empty ones. An absent column reads as
+                // "no such stage" rather than "nobody is here yet" — and you cannot drag onto a
+                // column that is not drawn.
+                var columns = Enum.GetValues<ApplicantStage>()
+                    .Select(stage => new
+                    {
+                        stage = stage.ToString(),
+                        terminal = stage is ApplicantStage.Hired or ApplicantStage.Rejected,
+                        candidates = applicants
+                            .Where(a => a.stage == stage)
+                            .Select(a => new { a.reference, a.fullName, a.screening }),
+                    });
+
+                return Results.Ok(new
+                {
+                    requisitions,
+                    requisition = target.Reference,
+                    title = target.Title,
+                    columns,
+                });
+            })
+            .RequireAuthorization(PermissionRequirement.PolicyName(Permissions.ForTool(Id, "list_applicants")))
+            .WithName("Hiring_Pipeline");
 
         // Backs the custom-React Candidate tab: everything that tab needs in ONE payload — the
         // applicant, the live screening, and the CV already split into highlight segments.

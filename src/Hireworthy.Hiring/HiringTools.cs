@@ -197,6 +197,83 @@ public sealed class HiringTools(HiringDbContext db, ITenantContext tenantContext
              + $"Rationale: {rationale}";
     }
 
+    /// <summary>
+    /// Lists the applicants on one requisition, optionally narrowed to a single stage.
+    /// </summary>
+    /// <remarks>
+    /// A read, and the tool behind the Pipeline board's permission. It reports where each candidate
+    /// <em>is</em>; nothing here moves anyone. Stages change only in
+    /// <see cref="AdvanceCandidatesAsync"/> and <see cref="RejectCandidateAsync"/>, both
+    /// approval-gated.
+    /// </remarks>
+    [Description("List the applicants on one requisition, e.g. 'REQ-142', with their stage and their screening score. Optionally narrow to a single stage.")]
+    public async Task<string> ListApplicantsAsync(
+        [Description("The requisition's reference, e.g. 'REQ-142'.")] string requisitionReference,
+        [Description("Optional stage to filter by: Applied, Screening, Interview, Offer, Hired or Rejected. Leave empty for all.")] string? stage = null,
+        CancellationToken cancellationToken = default)
+    {
+        var requisition = await db.Requisitions
+            .FirstOrDefaultAsync(r => r.Reference == requisitionReference, cancellationToken);
+
+        if (requisition is null)
+        {
+            return $"No requisition found with reference \"{requisitionReference}\".";
+        }
+
+        ApplicantStage? filter = null;
+
+        if (!string.IsNullOrWhiteSpace(stage))
+        {
+            if (!Enum.TryParse<ApplicantStage>(stage, ignoreCase: true, out var parsed))
+            {
+                // Ungated read: guidance rather than a throw, so the model can correct itself.
+                return $"\"{stage}\" is not a stage. Use one of: "
+                     + $"{string.Join(", ", Enum.GetNames<ApplicantStage>())}.";
+            }
+
+            filter = parsed;
+        }
+
+        var applicants = await db.Applicants
+            .Where(a => a.RequisitionId == requisition.Id)
+            .Where(a => filter == null || a.Stage == filter)
+            .OrderBy(a => a.Reference)
+            .Select(a => new
+            {
+                a.Reference,
+                a.FullName,
+                a.Stage,
+                Screening = db.ScreeningResults
+                    .Where(r => r.ApplicantId == a.Id && r.Status == ScreeningStatus.Proposed)
+                    .OrderByDescending(r => r.ScreenedAt)
+                    .Select(r => new { r.TotalScore, r.MaxScore, r.UnresolvedCount })
+                    .FirstOrDefault(),
+            })
+            .Take(200)
+            .ToListAsync(cancellationToken);
+
+        if (applicants.Count == 0)
+        {
+            return filter is null
+                ? $"{requisition.Reference} has no applicants yet."
+                : $"{requisition.Reference} has no applicants at stage {filter}.";
+        }
+
+        var lines = applicants.Select(a =>
+        {
+            var score = a.Screening is null
+                ? "not screened"
+                : $"scored {a.Screening.TotalScore}/{a.Screening.MaxScore}"
+                  + (a.Screening.UnresolvedCount > 0 ? $", {a.Screening.UnresolvedCount} not evidenced" : string.Empty);
+
+            return $"{a.Reference} — {a.FullName} [{a.Stage}, {score}]";
+        });
+
+        return $"{requisition.Reference} has {applicants.Count} applicant(s)"
+             + (filter is null ? string.Empty : $" at stage {filter}")
+             + $": {string.Join("; ", lines)}.";
+    }
+
     [Description("Get one applicant by reference, e.g. 'APP-1001', including their CV text and anything already extracted from it.")]
     public async Task<string> GetApplicantAsync(
         [Description("The applicant's reference, e.g. 'APP-1001'.")] string reference,

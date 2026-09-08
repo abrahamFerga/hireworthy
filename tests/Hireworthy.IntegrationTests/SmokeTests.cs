@@ -95,9 +95,10 @@ public sealed class SmokeTests(IntegrationFixture fixture)
         var tools = hiring.GetProperty("tools").EnumerateArray()
             .ToDictionary(t => t.GetProperty("permission").GetString()!, t => t);
 
-        Assert.Equal(8, tools.Count);
+        Assert.Equal(9, tools.Count);
         Assert.True(tools.ContainsKey("tools.hiring.list_requisitions"));
         Assert.True(tools.ContainsKey("tools.hiring.get_requisition"));
+        Assert.True(tools.ContainsKey("tools.hiring.list_applicants"));
         Assert.True(tools.ContainsKey("tools.hiring.get_applicant"));
         Assert.True(tools.ContainsKey("tools.hiring.parse_cv"));
         Assert.True(tools.ContainsKey("tools.hiring.screen_applicant"));

@@ -77,7 +77,7 @@ hand that role every future write tool the module gains.
 | `chat` | `/hiring/chat` | — | server-driven | The platform's |
 | `requisitions` | `/hiring/requisitions` | `tools.hiring.list_requisitions` | **server-driven** | A table with columns; the declarative surface expresses it exactly |
 | `candidate` | `/hiring/candidates/:applicantId` | `tools.hiring.get_applicant` | **custom React** | The CV must render with **the cited spans highlighted in place**, next to the score that cites them. That is the product's central claim made visible, and no declarative table can express a span-anchored overlay on a document |
-| `pipeline` | `/hiring/pipeline` | `tools.hiring.list_applicants` | **custom React** | Drag-and-drop across stage columns. Bulk spatial manipulation — the one interaction the research found is genuinely chat-hostile |
+| `pipeline` | `/hiring/pipeline` | `tools.hiring.list_applicants` | **custom React** | Drag across stage columns to **compose a move request** — the drop writes nothing and the board has no route that changes a stage (**ADR-0012**). Bulk spatial manipulation — the one interaction the research found is genuinely chat-hostile |
 | `compliance` *(admin)* | `/hiring/compliance` | `tools.hiring.get_impact_report` | server-driven | Ratios in a table. **Admin tabs must declare a permission or startup throws** |
 
 Routes checked against the fleet's existing modules (`legal`, `finance`, `compliance`) — no

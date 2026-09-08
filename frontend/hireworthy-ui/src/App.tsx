@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { PlenipoApp, defineModule } from "@plenipo/ui";
 import { CandidateTab } from "./hiring/CandidateTab";
+import { PipelineTab } from "./hiring/PipelineTab";
 
 // Hireworthy's app entry (ADR-0011): the stock Plenipo shell plus the one tab that needs more than
 // server-driven rendering — the candidate view, where cited spans are highlighted inside the CV
@@ -11,6 +12,7 @@ import { CandidateTab } from "./hiring/CandidateTab";
 const hiring = defineModule("hiring", {
   tabs: {
     candidate: CandidateTab,
+    pipeline: PipelineTab,
   },
 });
 
