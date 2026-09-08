@@ -75,20 +75,53 @@ public sealed class ScreeningResult : EntityBase, ITenantOwned
     /// vague CV by shrinking the yardstick. The recruiter sees <see cref="UnresolvedCount"/> next to
     /// the total precisely so this is visible rather than baked in silently.
     /// </para>
+    /// <para>
+    /// <b>The maximum belongs to the rubric, not to the supplied score set</b>
+    /// (<c>weightByCriterionId</c> is the rubric's full weight table). An <i>omitted</i> criterion
+    /// reached the outcome ADR-0013 exists to prevent, more cheaply than marking it unresolved:
+    /// scoring one of five criteria used to read 25/25 rather than 25/90, so a weaker applicant
+    /// outranked a stronger one scored honestly. A criterion the rubric does not know is the one
+    /// thing still counted from the supplied set, at the default weight of 1, so it cannot be free
+    /// either.
+    /// </para>
+    /// <para>
+    /// <b>A criterion supplied twice is counted once, and <c>Total</c> can therefore never exceed
+    /// <c>Max</c>.</b> Moving the maximum onto the rubric is what made that worth stating: while the
+    /// maximum came from the supplied set, a repeat inflated both sides and the ratio survived; now
+    /// it would inflate only the total. <c>screen_applicant</c> refuses an omitted <i>and</i> a
+    /// repeated set before either reaches here, so this is the backstop that keeps the arithmetic
+    /// honest for any other caller rather than the place the rule is enforced (issue #45).
+    /// </para>
     /// </remarks>
     public static (int Total, int Max, int Unresolved) ComputeTotal(
         IEnumerable<CriterionScore> scores,
         IReadOnlyDictionary<Guid, int> weightByCriterionId)
     {
         var total = 0;
-        var max = 0;
         var unresolved = 0;
+
+        var max = weightByCriterionId.Values.Sum(weight => CriterionScore.MaxPoints * weight);
+        var counted = new HashSet<Guid>();
 
         foreach (var score in scores)
         {
-            var weight = weightByCriterionId.TryGetValue(score.RubricCriterionId, out var w) ? w : 1;
+            // A criterion supplied twice is counted once. screen_applicant refuses a repeated set
+            // outright, so this is the backstop rather than the policy — but it is what makes
+            // `total <= max` true unconditionally instead of only for well-formed input. Without
+            // it, a repeat adds to the total and not to the rubric-owned maximum, which is a lever
+            // on rank rather than a cosmetic error (issue #45).
+            if (!counted.Add(score.RubricCriterionId))
+            {
+                continue;
+            }
 
-            max += CriterionScore.MaxPoints * weight;
+            var onTheRubric = weightByCriterionId.TryGetValue(score.RubricCriterionId, out var w);
+            var weight = onTheRubric ? w : 1;
+
+            if (!onTheRubric)
+            {
+                max += CriterionScore.MaxPoints * weight;
+            }
 
             if (score.Unresolved)
             {

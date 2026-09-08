@@ -276,3 +276,64 @@ Worth carrying forward, because it is counter-intuitive: **the two halves of the
 differently.** The .NET packages are not on nuget.org and must be vendored into `.packages/`; the
 npm package is public and must not be. Treating them the same — either by vendoring the tarball or
 by assuming the nupkgs are public — is the error this records against.
+
+## ADR-0013 — A score set must cover the rubric exactly once; an omitted or repeated criterion is refused, never repaired
+
+**Status:** Accepted · 2026-08-08
+
+**Numbering note.** ADR-0012 is taken by the unmerged pipeline-board PR (#42). This is 0013 to avoid
+a collision when both land, not because 0012 was skipped.
+
+**Context.** Two p0 defects (#44, #45) were the same hole seen from opposite sides: nothing checked
+the model-supplied score set against the rubric it claims to measure. Omitting four of five criteria
+read *"25/25, every criterion evidenced"* and outranked a candidate honestly scored 80/90; supplying
+one criterion twice counted it twice and re-weighted the rubric for that one applicant.
+
+Fixing the first made the second worse, which is the part worth recording. Once the maximum belongs
+to the rubric rather than to the supplied set, a repeat inflates only the total, so `total <= max` —
+an invariant that had held unconditionally — became breakable. Measured at 167% on a two-row set.
+A duplicate is invisible on the Candidate tab, because `CvHighlighting.Segment` de-duplicates the
+covering criterion names and renders no doubled citation.
+
+The genuine alternative was to **repair** a malformed set instead of refusing it: back-fill missing
+criteria as `unresolved`, and de-duplicate a repeat by keeping one of the two scores.
+
+**Decision.** `screen_applicant` refuses both shapes outright, naming what is wrong so the next turn
+can recover, and writes nothing.
+
+Repair was rejected because both repairs invent a judgement nobody made. `unresolved` means *"the CV
+does not evidence this"* — a claim about a person's application that only an assessment can make, and
+back-filling it silently asserts on the model's behalf that four criteria were looked at and found
+wanting when they were never looked at at all. De-duplicating is the same error in miniature: two
+different scores for one criterion are two different judgements, and picking a winner by position is
+arbitrary at exactly the moment somebody's rank depends on it.
+
+`ComputeTotal` also folds a repeated criterion to one occurrence. That is a **backstop, not the
+policy** — it keeps the arithmetic honest for any future caller that does not go through the tool,
+and it is what makes `total <= max` true unconditionally.
+
+**This ADR exists because the reasoning above was previously attributed to ADR-0004, which does not
+say it.** ADR-0004 governs why `screen_applicant` and `parse_cv` write without an approval gate; it
+is silent on unresolved semantics and on completeness. The argument lived only in a code comment and
+a PR body, both invisible after merge. On a product that decides who gets a job, a fairness policy
+that no ADR records is a policy the next agent will contradict without knowing it did.
+
+**Consequences.** A candidate the model cannot score completely becomes **unscreenable**, and
+`advance_candidates` / `reject_candidate` both refuse a candidate with no live screening — so they
+stall in the pipeline rather than being scored wrongly. Stalling is the right direction to fail here
+and it is not free: nothing on the candidate's record says an attempt was made and refused, and the
+audit row for a refusal is `success: true, error: null`, indistinguishable from a successful
+screening. That gap is pre-existing (the fabricated-citation and paraphrase refusals behave the same
+way) and is the thing to watch once a real model provider drives these tools rather than a Mock that
+cannot populate `scores[]` at all.
+
+Refusals are recoverable by construction: both checks return before the supersession loop and before
+`db.ScreeningResults.Add`, and the rows are built into a plain `List` never attached to the
+`DbContext`, so a refused call cannot supersede an existing live screening or half-write.
+
+**A future change that relaxes either check will look like a usability fix.** It is not: deleting the
+`missing` block or the `duplicated` block restores a rank-inflation route that no `pr-gates.mjs`
+content rule can see, because those rules only fire on removed lines matching `RequiresApproval`,
+`Permissions.`, `AddPlenipoRole` or `HasQueryFilter`. The guard is
+`ScreeningTotalTests.A_duplicated_criterion_is_counted_once_and_cannot_outrun_the_maximum` and
+`ScreeningTests.A_repeated_criterion_is_refused_and_nothing_is_written`.
